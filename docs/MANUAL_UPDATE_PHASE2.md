@@ -33,3 +33,19 @@ npm run build
 ## 資料安全注意事項
 
 本次更新不會執行資料匯入、資料庫切換、資料刪除或永久清除學生紀錄。正式 Firebase 資料仍由原本的 `teaching-record` 專案提供。若未來要切換到新的 Firebase 專案，應另行建立新專案、建立備份、進行唯讀遷移預覽，並在確認轉換結果後才匯入。
+
+## GitHub Pages 資產 404 修正
+
+如果瀏覽器錯誤顯示資產請求為 `/TeachingRecord/assets/...`，而 repository 是 `TeachingRecord2`，表示 `vite.config.js` 仍使用舊的 base 路徑。請將：
+
+```js
+base: "/TeachingRecord/",
+```
+
+改成：
+
+```js
+base: "/TeachingRecord2/",
+```
+
+修改後重新建置並提交。部署網址應為 `https://yzhsage.github.io/TeachingRecord2/`，而不是舊的 `https://yzhsage.github.io/TeachingRecord/`。建置後的 `dist/index.html` 應引用 `/TeachingRecord2/assets/...`。若您刻意把 GitHub Pages 綁定在舊的 `/TeachingRecord/` 網址，則必須反過來確認實際部署的 repository 與 workflow；一般情況下，repository 名稱與 Vite base 必須一致。
