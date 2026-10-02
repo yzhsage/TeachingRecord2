@@ -49,3 +49,20 @@ base: "/TeachingRecord2/",
 ```
 
 修改後重新建置並提交。部署網址應為 `https://yzhsage.github.io/TeachingRecord2/`，而不是舊的 `https://yzhsage.github.io/TeachingRecord/`。建置後的 `dist/index.html` 應引用 `/TeachingRecord2/assets/...`。若您刻意把 GitHub Pages 綁定在舊的 `/TeachingRecord/` 網址，則必須反過來確認實際部署的 repository 與 workflow；一般情況下，repository 名稱與 Vite base 必須一致。
+
+## 本次追加：週曆靠上對齊與學生優先遷移預覽
+
+本次 `src/App.jsx` 將週曆欄位改為 `align-items: stretch`、`justify-content: flex-start`，並讓每日內容區從頂端開始排列。`vite.config.js` 使用 `/TeachingRecord2/` 作為 GitHub Pages base。
+
+學生優先預覽工具位於 `scripts/migration-student-first.mjs`。請先從現行 App 匯出 JSON 備份，再執行：
+
+```bash
+node scripts/migration-preview.mjs /path/to/教學紀錄備份.json ./migration-preview
+node scripts/migration-student-first.mjs /path/to/教學紀錄備份.json ./student-first-import.json
+```
+
+第一個工具產生人工檢查用的摘要與同名候選清單；第二個工具產生學生優先的候選匯入檔。兩者都只讀取本機 JSON，不連線 Firebase、不寫入 Firebase、不合併同名學生、不刪除任何紀錄。
+
+在 `student-first-import.json` 中，`students` 是學生主檔，`enrollments` 保存學生與各班的加入日、停班日、復課日、學校與分組；`attendance`、`assessments` 與 `fees` 則保留學生 ID、班級 ID 與原始紀錄脈絡。確認檔案內容前，不要把它匯入任何正式資料庫。
+
+完成預覽後，下一個真正的遷移階段才是建立獨立 Firebase 測試專案，撰寫一次性匯入器，先匯入測試資料庫並逐項核對。只有在人工核對完成、且您明確確認後，才考慮切換 App 的 Firebase 設定。

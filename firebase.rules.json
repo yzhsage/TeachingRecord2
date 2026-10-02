@@ -1,8 +1,8 @@
 {
   "rules": {
     "records": {
-      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
-      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+      ".read": "auth != null",
+      ".write": "auth != null"
     },
     ".read": false,
     ".write": false
