@@ -3412,6 +3412,7 @@ button:active { transform: scale(.98); }
 .nav-pill { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 9px 13px; color: #7B8799; }
 .nav-pill.pill-active { background: #EEF0FF; color: var(--blue); }
 .pill { border-color: transparent; background: #F6F8FC; font-weight: 700; }
+.pill.pill-active { background: #6177E8; color: #FFFFFF; border-color: #6177E8; box-shadow: 0 6px 14px rgba(97,119,232,.22); }
 .utility-pill { padding: 8px 11px; color: #8290A4; }
 .pill-warning { background: #FFF0D8 !important; color: #B8791B !important; }
 .view-pad { position: relative; z-index: 1; max-width: 1240px; padding: 28px clamp(18px, 4vw, 48px) 56px; }
