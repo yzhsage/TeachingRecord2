@@ -8,9 +8,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 import _ from "lodash";
-import { ref, get, set as dbSet, update as dbUpdate } from "firebase/database";
 import { signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
+import { loadStudentFirstKey, saveStudentFirstKey } from "./studentFirstStorage";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
 import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
@@ -320,18 +320,9 @@ function isStudentOnAttendanceList(student, dateStr, attendanceData) {
 /* Storage helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-/* Storage keys used elsewhere in this file look like "attendance:abc123".
-   Firebase Realtime Database paths use "/" for nesting, so ":" is mapped
-   to "/" and everything lives under a single "records" root — this keeps
-   the security rules simple (one rule covers all app data). */
-function keyToPath(key) {
-  return `records/${key.replace(/:/g, "/")}`;
-}
 async function loadKey(key, fallback) {
   try {
-    const snap = await get(ref(db, keyToPath(key)));
-    if (!snap.exists()) return fallback;
-    return snap.val();
+    return await loadStudentFirstKey(key, fallback);
   } catch (e) {
     console.error("firebase load failed", key, e);
     return fallback;
@@ -373,11 +364,8 @@ async function saveKey(key, value) {
   }
   memoryCache.set(key, value);
   try {
-    // Firebase's set() throws on `undefined` properties (unlike
-    // JSON.stringify, which silently drops them) — round-tripping
-    // through JSON first keeps the old, more forgiving behavior.
     const sanitized = JSON.parse(JSON.stringify(value));
-    await dbSet(ref(db, keyToPath(key)), sanitized);
+    await saveStudentFirstKey(key, sanitized);
     return true;
   } catch (e) {
     console.error("firebase save failed", key, e);
@@ -624,25 +612,14 @@ export default function App() {
       ]);
       const cleaned = removeStudentFromRecords(studentId, { attendance, quiz, exam, fee });
       const nextStudentIndex = removeStudentFromStudentIndex(studentIndex, studentId, classId);
-      const updates = {
-        [keyToPath(`attendance:${classId}`)]: JSON.parse(JSON.stringify(cleaned.attendance)),
-        [keyToPath(`quiz:${classId}`)]: JSON.parse(JSON.stringify(cleaned.quiz)),
-        [keyToPath(`exam:${classId}`)]: JSON.parse(JSON.stringify(cleaned.exam)),
-        [keyToPath("studentIndex")]: JSON.parse(JSON.stringify(nextStudentIndex)),
-      };
-      const cacheEntries = [
-        [`attendance:${classId}`, cleaned.attendance],
-        [`quiz:${classId}`, cleaned.quiz],
-        [`exam:${classId}`, cleaned.exam],
-        ["studentIndex", nextStudentIndex],
-      ];
       const shouldWriteFee = hasFee || (fee?.charges || []).length > 0;
-      if (shouldWriteFee) {
-        updates[keyToPath(`fee:${classId}`)] = JSON.parse(JSON.stringify(cleaned.fee));
-        cacheEntries.push([`fee:${classId}`, cleaned.fee]);
-      }
-      await dbUpdate(ref(db), updates);
-      cacheEntries.forEach(([key, value]) => memoryCache.set(key, value));
+      await Promise.all([
+        saveKey(`attendance:${classId}`, cleaned.attendance),
+        saveKey(`quiz:${classId}`, cleaned.quiz),
+        saveKey(`exam:${classId}`, cleaned.exam),
+        saveKey("studentIndex", nextStudentIndex),
+        ...(shouldWriteFee ? [saveKey(`fee:${classId}`, cleaned.fee)] : []),
+      ]);
       setStudentIndex(nextStudentIndex);
       setToast("已永久清除這位學生在本班的全部紀錄。");
       return true;
@@ -769,30 +746,23 @@ export default function App() {
       const importedEvents = Array.isArray(bundle.calendarEvents)
         ? bundle.calendarEvents.map(normalizeEvent).filter(Boolean).filter((event) => !event.readOnly)
         : null;
-      const updates = {};
-      const cacheEntries = [];
-      updates[keyToPath("classIndex")] = JSON.parse(JSON.stringify(importedClasses));
-      updates[keyToPath("studentIndex")] = JSON.parse(JSON.stringify(importedStudentIndex));
-      cacheEntries.push(["classIndex", importedClasses]);
-      cacheEntries.push(["studentIndex", importedStudentIndex]);
+      const writes = [
+        saveKey("classIndex", importedClasses),
+        saveKey("studentIndex", importedStudentIndex),
+      ];
       for (const c of importedClasses) {
         const rec = bundle.records[c.id];
         if (!rec) continue;
         for (const [name, value] of Object.entries({ attendance: rec.attendance, quiz: rec.quiz, exam: rec.exam, fee: rec.fee })) {
           if (value === undefined || value === null) continue;
           const key = `${name}:${c.id}`;
-          updates[keyToPath(key)] = JSON.parse(JSON.stringify(value));
-          cacheEntries.push([key, value]);
+          writes.push(saveKey(key, value));
         }
       }
       if (importedEvents) {
-        updates[keyToPath("calendar:events")] = JSON.parse(JSON.stringify(importedEvents));
-        cacheEntries.push(["calendar:events", importedEvents]);
+        writes.push(saveKey("calendar:events", importedEvents));
       }
-      if (Object.keys(updates).length > 0) {
-        await dbUpdate(ref(db), updates);
-        cacheEntries.forEach(([key, value]) => memoryCache.set(key, value));
-      }
+      await Promise.all(writes);
       if (importedEvents) setCalendarEvents(importedEvents);
       setStudentIndex(importedStudentIndex);
       importClasses(importedClasses);
