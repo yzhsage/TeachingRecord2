@@ -904,7 +904,7 @@ function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
   return (
     <header className="topnav">
       <div className="brand">
-        <span className="brand-mark">課</span>
+        <img className="brand-mark" src={`${import.meta.env.BASE_URL}app-icon.png`} alt="" aria-hidden="true" />
         <div>
           <div className="brand-text">教學紀錄</div>
           <div className="brand-caption">一人教師工作台</div>
@@ -3307,11 +3307,11 @@ const CSS = `
 .score-leaderboard-pr, .score-leaderboard-latest { color: var(--ink-soft); font-size: 10px; }
 
 .matrix-scroll { overflow: auto; max-height: min(56vh, 520px); margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; }
-.matrix { border-collapse: collapse; width: 100%; min-width: max-content; background: var(--card); }
+.matrix { border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; background: var(--card); }
 .matrix th, .matrix td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 6px 8px; }
-.attendance-matrix thead th { position: sticky; top: 0; z-index: 3; background: var(--card); box-shadow: 0 1px 0 var(--line); }
+.matrix thead th { position: sticky; top: 0; z-index: 3; background: var(--card); box-shadow: 0 2px 0 var(--line); }
 .matrix-corner { position: sticky !important; top: 0; left: 0; background: var(--ink) !important; color: white; z-index: 5 !important; min-width: 88px; font-size: 12px; text-align: left; }
-.matrix-row-head { position: sticky; left: 0; background: var(--card); z-index: 2; min-width: 88px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.matrix-row-head { position: sticky; left: 0; background: var(--card); z-index: 2; min-width: 88px; font-size: 13px; font-weight: 500; white-space: nowrap; box-shadow: 2px 0 0 var(--line); }
 .matrix-col-head { min-width: 118px; position: relative; font-size: 12px; }
 .matrix-col-school { margin-top: 3px; overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 400; }
 .matrix-col-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 5px; min-height: 28px; }
@@ -3402,7 +3402,7 @@ button:active { transform: scale(.98); }
 .shell::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .28; background-image: radial-gradient(#CBD4E7 0.7px, transparent 0.7px); background-size: 18px 18px; mask-image: linear-gradient(to bottom, black, transparent 75%); }
 .topnav { position: sticky; top: 0; z-index: 10; min-height: 74px; padding: 13px clamp(18px, 4vw, 48px); gap: 22px; background: rgba(255,255,255,.88); border-bottom: 1px solid rgba(229,233,242,.9); box-shadow: 0 5px 22px rgba(49,62,92,.06); backdrop-filter: blur(18px); }
 .brand { gap: 10px; min-width: 180px; }
-.brand-mark { width: 40px; height: 40px; border-radius: 12px 12px 12px 4px; background: linear-gradient(145deg, var(--coral), #F7B36D); font-size: 18px; box-shadow: 0 8px 15px rgba(242,125,114,.26); transform: rotate(-5deg); }
+.brand-mark { width: 40px; height: 40px; border-radius: 12px 12px 12px 4px; padding: 2px; object-fit: contain; background: linear-gradient(145deg, var(--coral), #F7B36D); box-shadow: 0 8px 15px rgba(242,125,114,.26); transform: rotate(-5deg); }
 .brand-text { color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 17px; letter-spacing: .04em; }
 .brand-caption { color: #9CA8BA; font-size: 10px; letter-spacing: .16em; margin-top: 2px; }
 .topnav-middle { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 150px; color: #99A4B6; font-size: 12px; }
