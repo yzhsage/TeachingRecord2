@@ -365,12 +365,31 @@ async function saveKey(key, value) {
   memoryCache.set(key, value);
   try {
     const sanitized = JSON.parse(JSON.stringify(value));
-    await saveStudentFirstKey(key, sanitized);
+    await enqueueStudentFirstSave(key, sanitized);
     return true;
   } catch (e) {
     console.error("firebase save failed", key, e);
     return false;
   }
+}
+const pendingStudentFirstSaves = new Map();
+const SAVE_TIMEOUT_MS = 15000;
+function withSaveTimeout(promise, key) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Firebase 儲存逾時：${key}`)), SAVE_TIMEOUT_MS)),
+  ]);
+}
+function enqueueStudentFirstSave(key, value) {
+  const previous = pendingStudentFirstSaves.get(key) || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => withSaveTimeout(saveStudentFirstKey(key, value), key));
+  pendingStudentFirstSaves.set(key, next);
+  next.then(() => {
+    if (pendingStudentFirstSaves.get(key) === next) pendingStudentFirstSaves.delete(key);
+  }, () => {
+    if (pendingStudentFirstSaves.get(key) === next) pendingStudentFirstSaves.delete(key);
+  });
+  return next;
 }
 /* Module-level (not React state) cache, keyed by storage key. This is
    the actual fix for "switch class/tab, come back, edit is gone": that
