@@ -1493,12 +1493,18 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   const [addTime, setAddTime] = useState("");
   const [viewMode, setViewMode] = useState("single");
   const [editingCell, setEditingCell] = useState(null);
+  const [journalDraft, setJournalDraft] = useState({ content: "", note: "" });
   const storageKeyName = `attendance:${cls.id}`;
   const [data, setData, ready] = useCachedStore(storageKeyName, {});
 
   const saveState = useDebouncedSave(data, storageKeyName, ready);
 
   const dayData = { note: "", content: "", records: {}, ...(data[date] || {}) };
+  useEffect(() => {
+    setJournalDraft({ content: dayData.content || "", note: dayData.note || "" });
+    // 只在切換日期或初次載入時同步，避免每次輸入都被資料狀態覆蓋。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, ready]);
   const session = getSessionInfo(cls, date);
   const isSession = isSessionDay(cls, date, data);
   const boundary = earliestScheduledDate(cls, Object.keys(data).filter((k) => hasSessionRecord(data, k)));
@@ -1555,11 +1561,9 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   function markStopped(studentId) {
     onUpdateClass((c) => ({ ...c, students: c.students.map((s) => (s.id === studentId ? { ...s, endDate: date, resumeDate: "" } : s)) }));
   }
-  function setNote(value) {
-    setDay((d) => ({ ...d, note: value }));
-  }
-  function setContent(value) {
-    setDay((d) => ({ ...d, content: value }));
+  function saveJournalField(field) {
+    const value = journalDraft[field] || "";
+    setDay((d) => ({ ...d, [field]: value }));
   }
   function confirmCancel() {
     onUpdateClass((c) => {
@@ -1670,11 +1674,11 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
 
           <label className="field" style={{ marginTop: 10 }}>
             <span>教學日誌內容（這堂課教了什麼）</span>
-            <textarea className="journal-textarea" value={dayData.content || ""} onChange={(e) => setContent(e.target.value)} placeholder="例：CH2 2-1～2-2、講義 p12-15…" rows={2} />
+            <textarea className="journal-textarea" value={journalDraft.content} onChange={(e) => setJournalDraft((draft) => ({ ...draft, content: e.target.value }))} onBlur={() => saveJournalField("content")} placeholder="例：CH2 2-1～2-2、講義 p12-15…" rows={2} />
           </label>
           <label className="field" style={{ marginTop: 8 }}>
             <span>當日備註</span>
-            <input value={dayData.note} onChange={(e) => setNote(e.target.value)} placeholder="例：颱風停課、教室異動…" />
+            <input value={journalDraft.note} onChange={(e) => setJournalDraft((draft) => ({ ...draft, note: e.target.value }))} onBlur={() => saveJournalField("note")} placeholder="例：颱風停課、教室異動…" />
           </label>
 
           {cls.students.length === 0 ? (
@@ -2003,7 +2007,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
 
   function addColumn() {
     if (!newName.trim()) return;
-    const col = { id: genId(), name: newName.trim(), date: newDate, subject: newSubject, segment: withSegment ? newSegment.trim() : "" };
+    const col = { id: genId(), name: newName.trim(), date: withSegment ? newDate : "", subject: newSubject, segment: withSegment ? newSegment.trim() : "" };
     setData((prev) => ({ ...prev, columns: [...prev.columns, col] }));
     setNewName(""); setNewSegment(""); setAdding(false);
   }
@@ -2084,7 +2088,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
   // joinDate／endDate 讓後來入班或已停班學生不會被錯算進歷史評量分母。
   const assessmentColumns = filteredColumns.map((col) => ({
     col,
-    enrolledStudents: studentsEnrolledOnDate(cls.students, col.date)
+    enrolledStudents: studentsEnrolledOnDate(cls.students, withSegment ? col.date : "")
       .filter((s) => groupFilter === "all" || (studentDisplay(s, null, cls).group || "") === groupFilter),
   }));
   const pooled = [];
@@ -2178,7 +2182,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
         <div className="form-card" style={{ marginTop: 10 }}>
           <div className="form-grid">
             <label className="field"><span>{unitLabel}名稱</span><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="例：CH1 1-3 / 一上一段" /></label>
-            <label className="field"><span>日期</span><input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></label>
+            {withSegment && <label className="field"><span>日期</span><input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></label>}
             {hasSubjects && (
               <label className="field">
                 <span>科目</span>
@@ -2229,7 +2233,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                       <div className="assessment-column-name">{col.name}</div>
                       <span className="assessment-column-count">已填 {count} / 當時 {enrolledCount} 人</span>
                     </div>
-                    <div className="assessment-column-date">{col.date}{col.subject ? ` · ${col.subject}` : ""}</div>
+                    {(withSegment ? (col.date || col.subject) : col.subject) && <div className="assessment-column-date">{withSegment && col.date}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
                     {withSegment && <div className="assessment-column-segment">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     <div className="assessment-column-score-row">
                       <strong>{fmtNum(avg)}</strong>
@@ -2322,7 +2326,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                           </div>
                         </div>
                       )}
-                      <div className="matrix-col-date">{col.date}{col.subject ? ` · ${col.subject}` : ""}</div>
+                      {(withSegment ? (col.date || col.subject) : col.subject) && <div className="matrix-col-date">{withSegment && col.date}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
                       {withSegment && <div className="matrix-col-range">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     </th>
                   ))}
