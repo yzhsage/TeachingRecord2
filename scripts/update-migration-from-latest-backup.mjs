@@ -95,6 +95,7 @@ export function updateFromLatestBackup(latest, previous) {
     classIdMap: fixedClassIdMap,
     classIdMapReverse: Object.fromEntries(Object.entries(fixedClassIdMap).map(([oldId, newId]) => [newId, oldId])),
     attendance: rewriteRecords(fresh.attendance || []),
+    attendanceJournal: (fresh.attendanceJournal || []).map((record) => ({ ...record, classId: classId(record.classId), legacyClassId: record.classId })),
     assessments: rewriteRecords(fresh.assessments || []),
     fees: rewriteRecords(fresh.fees || []),
     calendarEvents: latest.calendarEvents || [],
@@ -105,6 +106,7 @@ export function updateFromLatestBackup(latest, previous) {
     classes: Object.keys(result.classes).length,
     students: Object.keys(result.students).length,
     attendance: result.attendance.length,
+    attendanceJournal: result.attendanceJournal.length,
     assessments: result.assessments.length,
     fees: result.fees.length,
   };

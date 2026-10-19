@@ -1493,7 +1493,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   const [addTime, setAddTime] = useState("");
   const [viewMode, setViewMode] = useState("single");
   const [editingCell, setEditingCell] = useState(null);
-  const [journalDraft, setJournalDraft] = useState({ content: "", note: "" });
+  const [journalDraft, setJournalDraft] = useState({ content: "", note: "", videoUrl: "" });
   const storageKeyName = `attendance:${cls.id}`;
   const [data, setData, ready] = useCachedStore(storageKeyName, {});
 
@@ -1501,7 +1501,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
 
   const dayData = { note: "", content: "", records: {}, ...(data[date] || {}) };
   useEffect(() => {
-    setJournalDraft({ content: dayData.content || "", note: dayData.note || "" });
+    setJournalDraft({ content: dayData.content || "", note: dayData.note || "", videoUrl: dayData.videoUrl || "" });
     // 只在切換日期或初次載入時同步，避免每次輸入都被資料狀態覆蓋。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, ready]);
@@ -1673,13 +1673,18 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           )}
 
           <label className="field" style={{ marginTop: 10 }}>
-            <span>教學日誌內容（這堂課教了什麼）</span>
+            <span>教學日誌內容（完成輸入後點到其他欄位才儲存）</span>
             <textarea className="journal-textarea" value={journalDraft.content} onChange={(e) => setJournalDraft((draft) => ({ ...draft, content: e.target.value }))} onBlur={() => saveJournalField("content")} placeholder="例：CH2 2-1～2-2、講義 p12-15…" rows={2} />
           </label>
           <label className="field" style={{ marginTop: 8 }}>
             <span>當日備註</span>
             <input value={journalDraft.note} onChange={(e) => setJournalDraft((draft) => ({ ...draft, note: e.target.value }))} onBlur={() => saveJournalField("note")} placeholder="例：颱風停課、教室異動…" />
           </label>
+          <label className="field" style={{ marginTop: 8 }}>
+            <span>當日錄影連結（選填）</span>
+            <input type="url" value={journalDraft.videoUrl} onChange={(e) => setJournalDraft((draft) => ({ ...draft, videoUrl: e.target.value }))} onBlur={() => saveJournalField("videoUrl")} placeholder="貼上 Google Drive、YouTube 或其他錄影連結" />
+          </label>
+          {dayData.videoUrl && /^https?:\/\//i.test(dayData.videoUrl) && <div className="journal-video-link"><a href={dayData.videoUrl} target="_blank" rel="noreferrer">開啟當日錄影</a></div>}
 
           {cls.students.length === 0 ? (
             <div className="empty-note">尚未新增學生，請至「學生與課表」分頁新增。</div>

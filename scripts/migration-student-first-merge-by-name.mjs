@@ -85,6 +85,10 @@ function rosterStudentId(byClassLegacy, classId, legacyId) {
 
 function addAttendance(output, students, classInfo, records, byClassLegacy) {
   for (const [date, day] of sortedEntries(records)) {
+    const journal = { note: text(day?.note), content: text(day?.content), videoUrl: text(day?.videoUrl) };
+    if (journal.note || journal.content || journal.videoUrl) {
+      output.attendanceJournal.push({ classId: classInfo.id, date, ...journal });
+    }
     for (const [legacyId, status] of sortedEntries(day?.records)) {
       if (status === "" || status == null || (Array.isArray(status) && status.length === 0)) continue;
       const name = rosterStudentId(byClassLegacy, classInfo.id, legacyId);
@@ -121,7 +125,7 @@ export function buildMergedStudentFirstImport(bundle) {
   const records = isRecord(bundle?.records) ? bundle.records : {};
   const { byClassLegacy, byName } = buildNameIndex(classes);
   const studentsByName = {};
-  const output = { attendance: [], assessments: [], fees: [], unresolved: [] };
+  const output = { attendance: [], attendanceJournal: [], assessments: [], fees: [], unresolved: [] };
   const legacyMap = {};
 
   for (const cls of classes) {
@@ -175,6 +179,7 @@ export function buildMergedStudentFirstImport(bundle) {
     legacyMap,
     duplicateNameMerges: duplicateNames,
     attendance: output.attendance,
+    attendanceJournal: output.attendanceJournal,
     assessments: output.assessments,
     fees: output.fees,
     unresolved: output.unresolved,
@@ -186,6 +191,7 @@ export function buildMergedStudentFirstImport(bundle) {
       mergedRosterRows: classes.reduce((sum, cls) => sum + (Array.isArray(cls.students) ? cls.students.length : 0), 0) - Object.keys(students).length,
       duplicateNamesMerged: duplicateNames.length,
       attendance: output.attendance.length,
+      attendanceJournal: output.attendanceJournal.length,
       assessments: output.assessments.length,
       fees: output.fees.length,
     },

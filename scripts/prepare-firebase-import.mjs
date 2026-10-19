@@ -12,6 +12,7 @@ export function prepareFirebaseImport(input) {
     students: {},
     classes: {},
     attendance: {},
+    attendanceJournal: {},
     assessments: {},
     fees: {},
     calendarEvents: input.calendarEvents || {},
@@ -34,6 +35,10 @@ export function prepareFirebaseImport(input) {
   for (const [index, record] of (input.attendance || []).entries()) {
     const key = `att_${safeKey(record.classId)}_${safeKey(record.studentId)}_${safeKey(record.date)}_${index}`;
     data.attendance[key] = { ...record, id: key };
+  }
+  for (const [index, record] of (input.attendanceJournal || []).entries()) {
+    const key = `journal_${safeKey(record.classId)}_${safeKey(record.date)}_${index}`;
+    data.attendanceJournal[key] = { ...record, id: key };
   }
   for (const [index, record] of (input.assessments || []).entries()) {
     const key = `asm_${safeKey(record.type)}_${safeKey(record.classId)}_${safeKey(record.assessmentId)}_${safeKey(record.studentId)}_${index}`;
@@ -59,6 +64,7 @@ export function prepareFirebaseImport(input) {
       students: Object.keys(data.students).length,
       classes: Object.keys(data.classes).length,
       attendance: Object.keys(data.attendance).length,
+      attendanceJournal: Object.keys(data.attendanceJournal).length,
       assessments: Object.keys(data.assessments).length,
       fees: Object.keys(data.fees).length,
       calendarEvents: Array.isArray(data.calendarEvents) ? data.calendarEvents.length : Object.keys(data.calendarEvents || {}).length,

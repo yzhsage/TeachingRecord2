@@ -89,11 +89,15 @@ function toStudentIndex(studentsValue) {
   }));
 }
 
-function attendanceForClass(value, classId) {
+function attendanceForClass(value, journalValue, classId) {
   const output = {};
+  for (const record of Object.values(journalValue || {})) {
+    if (record.classId !== classId) continue;
+    output[record.date] = { note: record.note || "", content: record.content || "", videoUrl: record.videoUrl || "", records: {} };
+  }
   for (const [id, record] of entries(value)) {
     if (record.classId !== classId) continue;
-    const day = output[record.date] || { note: "", content: "", records: {} };
+    const day = output[record.date] || { note: "", content: "", videoUrl: "", records: {} };
     day.records[record.studentId] = record.status;
     output[record.date] = day;
   }
@@ -136,7 +140,9 @@ export async function loadStudentFirstKey(key, fallback) {
   } else if (key === "lastBackupAt") {
     value = await read("meta/lastBackupAt", null);
   } else if (key.startsWith("attendance:")) {
-    value = attendanceForClass(await read("attendance", {}), key.slice("attendance:".length));
+    const classId = key.slice("attendance:".length);
+    const [attendance, journal] = await Promise.all([read("attendance", {}), read("attendanceJournal", {})]);
+    value = attendanceForClass(attendance, journal, classId);
   } else if (key.startsWith("quiz:")) {
     value = assessmentForClass(await read("assessments", {}), key.slice("quiz:".length), "quiz");
   } else if (key.startsWith("exam:")) {
@@ -157,15 +163,21 @@ function toClassesRoot(value) {
 
 async function saveAttendance(classId, value) {
   const all = await read("attendance", {});
+  const journals = await read("attendanceJournal", {});
   for (const [id, record] of entries(all)) if (record.classId === classId) delete all[id];
+  for (const [id, record] of entries(journals)) if (record.classId === classId) delete journals[id];
   for (const [date, day] of entries(value)) {
+    if (day?.note || day?.content || day?.videoUrl) {
+      const id = `journal_${classId}_${date}`.replace(/[^A-Za-z0-9_-]/g, "_");
+      journals[id] = { id, classId, date, note: day.note || "", content: day.content || "", videoUrl: day.videoUrl || "" };
+    }
     for (const [studentId, status] of entries(day?.records)) {
       if (status === "" || status == null || (Array.isArray(status) && status.length === 0)) continue;
       const id = `att_${classId}_${studentId}_${date}`.replace(/[^A-Za-z0-9_-]/g, "_");
       all[id] = { id, studentId, classId, date, status };
     }
   }
-  await set(ref(db, "attendance"), all);
+  await Promise.all([set(ref(db, "attendance"), all), set(ref(db, "attendanceJournal"), journals)]);
 }
 
 async function saveAssessments(classId, value, type) {
