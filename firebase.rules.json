@@ -56,7 +56,7 @@
     },
     "portalStudentData": {
       "$studentId": {
-        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val() == true)",
+        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val() == true || root.child('portalAccounts').child(auth.uid).child('studentId').val() == $studentId)",
         ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
       }
     }

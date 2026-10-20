@@ -66,9 +66,9 @@ function ActivationView({ user, onBound, existingAccount = null }) {
       <div className="portal-card portal-activation-card">
         <div className="portal-kicker">TeachingRecord2</div>
         <h1>第一次登入設定</h1>
-        <p>此 Google 帳戶尚未綁定學生。請輸入管理者提供的個別啟用碼，系統會直接開啟指定學生的資料。</p>
+        <p>此帳戶尚未綁定學生。請輸入管理者為學生建立的 8 碼認證碼，系統會直接開啟指定學生的資料。</p>
         <form onSubmit={activate}>
-          <label className="portal-field"><span>個別啟用碼</span><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="請輸入啟用碼" autoFocus /></label>
+          <label className="portal-field"><span>學生 8 碼認證碼</span><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="例如 A7K3P9Q2" maxLength={8} autoFocus /></label>
           {error && <div className="portal-error">{error}</div>}
           <button className="portal-primary" disabled={busy || !code.trim()}>{busy ? "設定中…" : "開始查看"}</button>
         </form>
@@ -150,7 +150,10 @@ export default function ParentPortal({ user }) {
 export function isAdminUser(user) { return user?.email?.toLowerCase() === ADMIN_EMAIL; }
 
 function makeCode() {
-  return `TR-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 function buildStudentPortalData(studentId, students, classes, assessments, attendance, journal) {
@@ -200,7 +203,7 @@ export function PortalAdminPanel({ onClose }) {
     } catch (err) { setMessage(err.message || "同步失敗"); } finally { setBusy(false); }
   }
 
-  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與啟用碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再建立指定學生的個別啟用碼。家長可用同一個 Google 帳戶分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>同步全部學生查閱資料</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立個別啟用碼</button>{code && <div className="portal-code">{code}</div>}</div>{message && <div className="portal-admin-message">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{(account.studentIds || [account.studentId]).filter(Boolean).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
+  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>同步全部學生查閱資料</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{message && <div className="portal-admin-message">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{(account.studentIds || [account.studentId]).filter(Boolean).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
 }
 
 const PORTAL_CSS = `
