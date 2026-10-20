@@ -5,6 +5,11 @@ import { auth, db } from "./firebase";
 import { attendanceBaseStatus, attendanceHasStatus } from "./attendance";
 
 const ADMIN_EMAIL = "yzhsage@gmail.com";
+function accountStudentIds(account) {
+  if (Array.isArray(account?.studentIds)) return account.studentIds.filter(Boolean);
+  if (account?.studentIds && typeof account.studentIds === "object") return Object.entries(account.studentIds).filter(([, allowed]) => allowed === true).map(([id]) => id);
+  return account?.studentId ? [account.studentId] : [];
+}
 
 function fmtDate(value) {
   return value ? String(value).replaceAll("-", "/") : "";
@@ -43,7 +48,7 @@ function ActivationView({ user, onBound, existingAccount = null }) {
         email: user.email || "",
         displayName: user.displayName || "",
         studentId: invite.studentId,
-        studentIds: [...new Set([...(existingAccount?.studentIds || (existingAccount?.studentId ? [existingAccount.studentId] : [])), invite.studentId])],
+        studentIds: Object.fromEntries([...new Set([...accountStudentIds(existingAccount), invite.studentId])].map((id) => [id, true])),
         inviteCode: normalized,
         role: invite.role || "parent",
         boundAt: new Date().toISOString(),
@@ -104,7 +109,7 @@ export default function ParentPortal({ user }) {
       const accountSnapshot = await get(ref(db, `portalAccounts/${user.uid}`));
       const nextAccount = accountSnapshot.val();
       setAccount(nextAccount || null);
-      const studentIds = nextAccount?.studentIds?.length ? nextAccount.studentIds : (nextAccount?.studentId ? [nextAccount.studentId] : []);
+      const studentIds = accountStudentIds(nextAccount);
       if (!studentIds.length) return;
       const activeStudentId = selectedStudentId && studentIds.includes(selectedStudentId) ? selectedStudentId : studentIds[0];
       setSelectedStudentId(activeStudentId);
@@ -125,7 +130,7 @@ export default function ParentPortal({ user }) {
   const attendanceList = useMemo(() => attendanceRows(attendance, journal, student?.id, classIds), [attendance, journal, student, classIds]);
 
   if (loading) return <div className="portal-shell"><div className="portal-loading">載入中…</div></div>;
-  const boundStudentIds = account?.studentIds?.length ? account.studentIds : (account?.studentId ? [account.studentId] : []);
+  const boundStudentIds = accountStudentIds(account);
   if (!boundStudentIds.length || addingChild) return <ActivationView user={user} existingAccount={account} onBound={(studentId) => { setAddingChild(false); setSelectedStudentId(studentId); loadAccount(); }} />;
   if (error) return <div className="portal-shell"><div className="portal-card"><h1>資料暫時無法載入</h1><p className="portal-error">{error}</p><button className="portal-primary" onClick={loadAccount}>重新載入</button></div></div>;
 

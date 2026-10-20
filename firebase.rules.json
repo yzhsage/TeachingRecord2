@@ -44,7 +44,7 @@
     },
     "portalInvites": {
       "$code": {
-        ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (data.exists() && !data.child('revoked').val() && (!data.child('claimedBy').exists() || data.child('claimedBy').val() == auth.uid)))",
         ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (!data.exists() && newData.child('claimedBy').val() == auth.uid && newData.child('studentId').exists()) || (data.exists() && !data.child('claimedBy').exists() && newData.child('claimedBy').val() == auth.uid))"
       }
     },
