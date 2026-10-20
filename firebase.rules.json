@@ -1,10 +1,64 @@
 {
   "rules": {
-    "records": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
     ".read": false,
-    ".write": false
+    ".write": false,
+    "students": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "classes": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "attendance": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "attendanceJournal": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "assessments": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "fees": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "calendarEvents": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "meta": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "records": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "compatibility": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+    },
+    "portalInvites": {
+      "$code": {
+        ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
+        ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (!data.exists() && newData.child('claimedBy').val() == auth.uid && newData.child('studentId').exists()) || (data.exists() && !data.child('claimedBy').exists() && newData.child('claimedBy').val() == auth.uid))"
+      }
+    },
+    "portalAccounts": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'yzhsage@gmail.com')",
+        ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (auth.uid == $uid && newData.child('studentIds').exists() && newData.child('inviteCode').exists() && root.child('portalInvites').child(newData.child('inviteCode').val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(newData.child('inviteCode').val()).child('studentId').val() == newData.child('studentId').val()))"
+      }
+    },
+    "portalStudentData": {
+      "$studentId": {
+        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val() == true)",
+        ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
+      }
+    }
   }
 }

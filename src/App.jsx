@@ -11,6 +11,7 @@ import _ from "lodash";
 import { signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
 import { loadStudentFirstKey, saveStudentFirstKey } from "./studentFirstStorage";
+import { PortalAdminPanel } from "./ParentPortal.jsx";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
 import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
@@ -568,6 +569,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [returnView, setReturnView] = useState("today");
   const [backupOpen, setBackupOpen] = useState(false);
+  const [portalAdminOpen, setPortalAdminOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState(undefined); // undefined = still loading
   const fileInputRef = useRef(null);
@@ -837,7 +839,9 @@ export default function App() {
         saveStatus={classIdxSave}
         backupOverdue={backupOverdue}
         onToggleBackup={() => setBackupOpen((v) => !v)}
+        onOpenPortalAdmin={() => setPortalAdminOpen(true)}
       />
+      {portalAdminOpen && <PortalAdminPanel onClose={() => setPortalAdminOpen(false)} />}
       <Toast message={toast} onClose={() => setToast(null)} />
       {backupOpen && (
         <div className="view-pad" style={{ paddingBottom: 0 }}>
@@ -919,7 +923,7 @@ function Shell({ children }) {
 /* Top nav                                                              */
 /* ------------------------------------------------------------------ */
 
-function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
+function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup, onOpenPortalAdmin }) {
   return (
     <header className="topnav">
       <div className="brand">
@@ -940,6 +944,7 @@ function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
       </nav>
       <div className="topnav-actions">
         <SaveIndicator status={saveStatus.status} onRetry={saveStatus.retry} />
+        <button className="pill utility-pill" onClick={onOpenPortalAdmin} title="家長與學生查閱帳戶">家長帳戶</button>
         <button className={"pill utility-pill" + (backupOverdue ? " pill-warning" : "")} onClick={onToggleBackup} title="資料備份">備份{backupOverdue ? " · 待處理" : ""}</button>
         <button className="pill utility-pill logout-pill" onClick={() => signOut(auth)} title="登出">登出</button>
       </div>
