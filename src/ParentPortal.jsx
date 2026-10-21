@@ -199,7 +199,7 @@ export function PortalAdminPanel({ onClose }) {
       const [assessmentSnap, attendanceSnap, journalSnap] = await Promise.all([get(ref(db, "assessments")), get(ref(db, "attendance")), get(ref(db, "attendanceJournal"))]);
       const next = {};
       for (const id of Object.keys(students)) next[id] = buildStudentPortalData(id, students, classes, assessmentSnap.val() || {}, attendanceSnap.val() || {}, journalSnap.val() || {});
-      await set(ref(db, "portalStudentData"), next); setMessage(`已同步 ${Object.keys(next).length} 位學生的查閱資料。`);
+      await Promise.all(Object.entries(next).map(([id, data]) => set(ref(db, `portalStudentData/${id}`), data))); setMessage(`已同步 ${Object.keys(next).length} 位學生的查閱資料。`);
     } catch (err) { setMessage(err.message || "同步失敗"); } finally { setBusy(false); }
   }
 
