@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { get, ref, set, runTransaction } from "firebase/database";
+import { get, ref, set, update, runTransaction } from "firebase/database";
 import { signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { attendanceBaseStatus, attendanceHasStatus } from "./attendance";
@@ -7,8 +7,8 @@ import { attendanceBaseStatus, attendanceHasStatus } from "./attendance";
 const ADMIN_EMAIL = "yzhsage@gmail.com";
 function accountStudentIds(account) {
   if (Array.isArray(account?.studentIds)) return account.studentIds.filter(Boolean);
-  if (account?.studentIds && typeof account.studentIds === "object") return Object.entries(account.studentIds).filter(([, allowed]) => allowed === true).map(([id]) => id);
-  return account?.studentId ? [account.studentId] : [];
+  if (account?.studentIds && typeof account.studentIds === "object") return Object.entries(account.studentIds).filter(([, code]) => typeof code === "string" && code).map(([id]) => id);
+  return [];
 }
 
 function fmtDate(value) {
@@ -32,26 +32,26 @@ function ActivationView({ user, onBound, existingAccount = null }) {
     setError("");
     try {
       const inviteRef = ref(db, `portalInvites/${normalized}`);
-      const snapshot = await get(inviteRef);
-      const invite = snapshot.val();
+      let invite = null;
+      try { invite = (await get(inviteRef)).val(); }
+      catch { throw new Error("啟用碼無效、已使用或已失效。"); }
       if (!invite || invite.revoked || (invite.claimedBy && invite.claimedBy !== user.uid)) {
         throw new Error("啟用碼無效、已使用或已失效。");
       }
       if (!invite.studentId) throw new Error("啟用碼尚未指定學生，請聯絡管理者。");
-      const claim = await runTransaction(inviteRef, (current) => {
-        if (!current || current.revoked || (current.claimedBy && current.claimedBy !== user.uid)) return;
-        return { ...current, claimedBy: user.uid, claimedAt: new Date().toISOString() };
-      });
-      if (!claim.committed) throw new Error("啟用碼已被其他帳號使用。");
-      await set(ref(db, `portalAccounts/${user.uid}`), {
+      if (invite.claimedBy !== user.uid) {
+        const claim = await runTransaction(inviteRef, (current) => {
+          if (!current || current.revoked || current.claimedBy) return;
+          return { ...current, claimedBy: user.uid, claimedAt: new Date().toISOString() };
+        });
+        if (!claim.committed) throw new Error("啟用碼已被其他帳號使用。");
+      }
+      await update(ref(db, `portalAccounts/${user.uid}`), {
         uid: user.uid,
         email: user.email || "",
         displayName: user.displayName || "",
-        studentId: invite.studentId,
-        studentIds: Object.fromEntries([...new Set([...accountStudentIds(existingAccount), invite.studentId])].map((id) => [id, true])),
-        inviteCode: normalized,
-        role: invite.role || "parent",
         boundAt: new Date().toISOString(),
+        [`studentIds/${invite.studentId}`]: normalized,
       });
       onBound(invite.studentId);
     } catch (err) {
@@ -203,7 +203,7 @@ export function PortalAdminPanel({ onClose }) {
     } catch (err) { setMessage(err.message || "同步失敗"); } finally { setBusy(false); }
   }
 
-  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>同步全部學生查閱資料</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{message && <div className="portal-admin-message">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{(account.studentIds || [account.studentId]).filter(Boolean).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
+  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>同步全部學生查閱資料</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{message && <div className="portal-admin-message">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{accountStudentIds(account).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
 }
 
 const PORTAL_CSS = `

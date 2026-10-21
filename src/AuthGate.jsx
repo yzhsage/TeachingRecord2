@@ -9,6 +9,7 @@ const googleProvider = new GoogleAuthProvider();
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(undefined);
   const [password, setPassword] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
   const [email, setEmail] = useState("");
   const [portalMode, setPortalMode] = useState("login");
   const [error, setError] = useState("");
@@ -25,9 +26,9 @@ export default function AuthGate({ children }) {
 
   async function handleTeacherLogin(event) {
     event.preventDefault(); setError(""); setLoading(true);
-    try { await signInWithEmailAndPassword(auth, TEACHER_EMAIL, password); }
+    try { await signInWithEmailAndPassword(auth, TEACHER_EMAIL, adminPassword); }
     catch (err) { setError("管理者密碼錯誤，請再試一次。"); }
-    finally { setLoading(false); setPassword(""); }
+    finally { setLoading(false); setAdminPassword(""); }
   }
 
   async function handlePortalEmail(event) {
@@ -54,6 +55,7 @@ export default function AuthGate({ children }) {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-title">教學紀錄系統</div>
+        {error && <div className="auth-error">{error}</div>}
         <button type="button" className="google-btn" onClick={handleGoogleLogin} disabled={loading}>使用 Google 帳戶登入</button>
         <div className="auth-divider"><span>家長／學生電子郵件登入</span></div>
         <div className="auth-mode-tabs"><button type="button" className={portalMode === "login" ? "active" : ""} onClick={() => { setPortalMode("login"); setError(""); }}>登入</button><button type="button" className={portalMode === "register" ? "active" : ""} onClick={() => { setPortalMode("register"); setError(""); }}>首次註冊</button></div>
@@ -64,9 +66,8 @@ export default function AuthGate({ children }) {
         </form>
         <div className="auth-divider"><span>管理者登入</span></div>
         <form onSubmit={handleTeacherLogin}>
-          <input type="password" className="auth-input" placeholder="請輸入管理者密碼" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
-          {error && <div className="auth-error">{error}</div>}
-          <button type="submit" className="auth-btn" disabled={loading || !password}>{loading ? "登入中…" : "管理者登入"}</button>
+          <input type="password" className="auth-input" placeholder="請輸入管理者密碼" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} autoComplete="current-password" />
+          <button type="submit" className="auth-btn" disabled={loading || !adminPassword}>{loading ? "登入中…" : "管理者登入"}</button>
         </form>
       </div>
       <style>{AUTH_CSS}</style>
