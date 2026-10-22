@@ -1,5 +1,6 @@
-import { get, ref, set } from "firebase/database";
+import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
+import { readPath } from "./firebaseRead";
 
 const cache = new Map();
 const text = (value) => String(value ?? "").trim();
@@ -122,33 +123,76 @@ function feesForClass(value, classId) {
   return { charges: Object.values(value || {}).filter((record) => record.classId === classId) };
 }
 
+/* Local copy of each top-level list (attendance, assessments, ...), shared by
+   every class. Downloading e.g. the whole "attendance" list once instead of
+   once per class keeps the first load fast and reliable. */
+const roots = new Map();
+
+async function readRoot(path) {
+  if (roots.has(path)) return roots.get(path);
+  const value = await readPath(path);
+  if (!roots.has(path)) roots.set(path, isObject(value) ? value : {});
+  return roots.get(path);
+}
+
 async function read(path, fallback) {
-  const snapshot = await get(ref(db, path));
-  return snapshot.exists() ? snapshot.val() : fallback;
+  const value = await readPath(path);
+  return value ?? fallback;
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+/* Patch that only touches this class's rows: rows that disappeared become
+   null (deleted), new or changed rows are written, other classes untouched. */
+export function diffRows(current, next, belongs) {
+  const patch = {};
+  for (const [id, record] of entries(current)) if (belongs(record) && !(id in next)) patch[id] = null;
+  for (const [id, record] of Object.entries(next)) if (!same(current[id], record)) patch[id] = record;
+  return patch;
+}
+
+/* Writes only the changed children of a top-level list with update().
+   The old version re-wrote the whole list with set(), so two classes saving
+   at the same moment could overwrite each other's records. */
+async function patchRoot(path, buildPatch) {
+  const current = await readRoot(path);
+  const patch = buildPatch(current);
+  if (!Object.keys(patch).length) return;
+  for (const [id, value] of Object.entries(patch)) {
+    if (value === null) delete current[id];
+    else current[id] = value;
+  }
+  try {
+    await update(ref(db, path), patch);
+  } catch (error) {
+    roots.delete(path);
+    cache.clear();
+    throw error;
+  }
 }
 
 export async function loadStudentFirstKey(key, fallback) {
   if (cache.has(key)) return clone(cache.get(key));
   let value = fallback;
   if (key === "classIndex") {
-    const [classes, students] = await Promise.all([read("classes", {}), read("students", {})]);
+    const [classes, students] = await Promise.all([readRoot("classes"), readRoot("students")]);
     value = toClassIndex(classes, students);
   } else if (key === "studentIndex") {
-    value = toStudentIndex(await read("students", {}));
+    value = toStudentIndex(await readRoot("students"));
   } else if (key === "calendar:events") {
     value = await read("calendarEvents", []);
   } else if (key === "lastBackupAt") {
     value = await read("meta/lastBackupAt", null);
   } else if (key.startsWith("attendance:")) {
     const classId = key.slice("attendance:".length);
-    const [attendance, journal] = await Promise.all([read("attendance", {}), read("attendanceJournal", {})]);
+    const [attendance, journal] = await Promise.all([readRoot("attendance"), readRoot("attendanceJournal")]);
     value = attendanceForClass(attendance, journal, classId);
   } else if (key.startsWith("quiz:")) {
-    value = assessmentForClass(await read("assessments", {}), key.slice("quiz:".length), "quiz");
+    value = assessmentForClass(await readRoot("assessments"), key.slice("quiz:".length), "quiz");
   } else if (key.startsWith("exam:")) {
-    value = assessmentForClass(await read("assessments", {}), key.slice("exam:".length), "exam");
+    value = assessmentForClass(await readRoot("assessments"), key.slice("exam:".length), "exam");
   } else if (key.startsWith("fee:")) {
-    value = feesForClass(await read("fees", {}), key.slice("fee:".length));
+    value = feesForClass(await readRoot("fees"), key.slice("fee:".length));
   }
   cache.set(key, clone(value));
   return clone(value);
@@ -162,93 +206,105 @@ function toClassesRoot(value) {
 }
 
 async function saveAttendance(classId, value) {
-  const all = await read("attendance", {});
-  const journals = await read("attendanceJournal", {});
-  for (const [id, record] of entries(all)) if (record.classId === classId) delete all[id];
-  for (const [id, record] of entries(journals)) if (record.classId === classId) delete journals[id];
+  const nextAttendance = {};
+  const nextJournals = {};
   for (const [date, day] of entries(value)) {
     if (day?.note || day?.content || day?.videoUrl) {
       const id = `journal_${classId}_${date}`.replace(/[^A-Za-z0-9_-]/g, "_");
-      journals[id] = { id, classId, date, note: day.note || "", content: day.content || "", videoUrl: day.videoUrl || "" };
+      nextJournals[id] = { id, classId, date, note: day.note || "", content: day.content || "", videoUrl: day.videoUrl || "" };
     }
     for (const [studentId, status] of entries(day?.records)) {
       if (status === "" || status == null || (Array.isArray(status) && status.length === 0)) continue;
       const id = `att_${classId}_${studentId}_${date}`.replace(/[^A-Za-z0-9_-]/g, "_");
-      all[id] = { id, studentId, classId, date, status };
+      nextAttendance[id] = { id, studentId, classId, date, status };
     }
   }
-  await Promise.all([set(ref(db, "attendance"), all), set(ref(db, "attendanceJournal"), journals)]);
+  const belongs = (record) => record?.classId === classId;
+  await Promise.all([
+    patchRoot("attendance", (all) => diffRows(all, nextAttendance, belongs)),
+    patchRoot("attendanceJournal", (all) => diffRows(all, nextJournals, belongs)),
+  ]);
 }
 
 async function saveAssessments(classId, value, type) {
-  const all = await read("assessments", {});
-  for (const [id, record] of entries(all)) if (record.classId === classId && record.type === type) delete all[id];
+  const next = {};
   for (const column of value?.columns || []) {
     for (const [studentId, score] of entries(value?.scores?.[column.id])) {
       const id = `asm_${type}_${classId}_${column.id}_${studentId}`.replace(/[^A-Za-z0-9_-]/g, "_");
-      all[id] = { id, studentId, classId, type, assessmentId: column.id, name: column.name || "", date: column.date || "", range: column.range || "", score };
+      next[id] = { id, studentId, classId, type, assessmentId: column.id, name: column.name || "", date: column.date || "", range: column.range || "", score };
     }
   }
-  await set(ref(db, "assessments"), all);
+  await patchRoot("assessments", (all) => diffRows(all, next, (record) => record?.classId === classId && record?.type === type));
 }
 
 async function saveFees(classId, value) {
-  const all = await read("fees", {});
-  for (const [id, record] of entries(all)) if (record.classId === classId) delete all[id];
+  const next = {};
   for (const [index, charge] of (value?.charges || []).entries()) {
     const id = charge.id || `fee_${classId}_${charge.studentId || "student"}_${index}`.replace(/[^A-Za-z0-9_-]/g, "_");
-    all[id] = { ...charge, id, classId };
+    next[id] = { ...charge, id, classId };
   }
-  await set(ref(db, "fees"), all);
+  await patchRoot("fees", (all) => diffRows(all, next, (record) => record?.classId === classId));
+}
+
+function changedStudents(current, students) {
+  const patch = {};
+  for (const [id, student] of Object.entries(students)) if (!same(current[id], student)) patch[id] = student;
+  return patch;
 }
 
 async function saveStudentsFromClasses(value) {
-  const students = studentMap(await read("students", {}));
-  for (const cls of value || []) {
-    for (const roster of cls.students || []) {
-      if (!roster?.id) continue;
-      const previous = students[roster.id] || { id: roster.id, displayName: roster.name || "", aliases: [], enrollments: {}, sourceRefs: [] };
-      const existing = Object.values(previous.enrollments || {}).find((item) => item.classId === cls.id);
-      const enrollmentId = existing?.id || `enr_${roster.id}_${cls.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
-      students[roster.id] = {
-        ...previous,
-        displayName: roster.name || previous.displayName || "",
-        enrollments: {
-          ...(previous.enrollments || {}),
-          [enrollmentId]: {
-            ...(existing || {}),
-            id: enrollmentId,
-            studentId: roster.id,
-            classId: cls.id,
-            className: cls.name || "",
-            subject: cls.subject || "",
-            grade: roster.grade || cls.grade || "",
-            school: roster.school || "",
-            group: roster.group || "",
-            joinDate: roster.joinDate || "",
-            endDate: roster.endDate || "",
-            resumeDate: roster.resumeDate || "",
-            status: roster.membership === "stopped" ? "ended" : "active",
+  await patchRoot("students", (current) => {
+    const students = studentMap(clone(current));
+    for (const cls of value || []) {
+      for (const roster of cls.students || []) {
+        if (!roster?.id) continue;
+        const previous = students[roster.id] || { id: roster.id, displayName: roster.name || "", aliases: [], enrollments: {}, sourceRefs: [] };
+        const existing = Object.values(previous.enrollments || {}).find((item) => item.classId === cls.id);
+        const enrollmentId = existing?.id || `enr_${roster.id}_${cls.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+        students[roster.id] = {
+          ...previous,
+          displayName: roster.name || previous.displayName || "",
+          enrollments: {
+            ...(previous.enrollments || {}),
+            [enrollmentId]: {
+              ...(existing || {}),
+              id: enrollmentId,
+              studentId: roster.id,
+              classId: cls.id,
+              className: cls.name || "",
+              subject: cls.subject || "",
+              grade: roster.grade || cls.grade || "",
+              school: roster.school || "",
+              group: roster.group || "",
+              joinDate: roster.joinDate || "",
+              endDate: roster.endDate || "",
+              resumeDate: roster.resumeDate || "",
+              status: roster.membership === "stopped" ? "ended" : "active",
+            },
           },
-        },
-      };
+        };
+      }
     }
-  }
-  await set(ref(db, "students"), students);
+    return changedStudents(current, students);
+  });
 }
 
 export async function saveStudentFirstKey(key, value) {
   cache.set(key, clone(value));
   if (key === "classIndex") {
-    await set(ref(db, "classes"), toClassesRoot(value));
+    const classesRoot = toClassesRoot(value);
+    await set(ref(db, "classes"), classesRoot);
+    roots.set("classes", classesRoot);
     await saveStudentsFromClasses(value);
   } else if (key === "studentIndex") {
-    const students = studentMap(await read("students", {}));
-    for (const [id, profile] of entries(value)) {
-      const previous = students[id] || { id, aliases: [], enrollments: {}, sourceRefs: [] };
-      students[id] = { ...previous, displayName: profile.name || previous.displayName || "", aliases: previous.aliases || [], sourceRefs: profile.sourceRefs || previous.sourceRefs || [] };
-    }
-    await set(ref(db, "students"), students);
+    await patchRoot("students", (current) => {
+      const students = studentMap(clone(current));
+      for (const [id, profile] of entries(value)) {
+        const previous = students[id] || { id, aliases: [], enrollments: {}, sourceRefs: [] };
+        students[id] = { ...previous, displayName: profile.name || previous.displayName || "", aliases: previous.aliases || [], sourceRefs: profile.sourceRefs || previous.sourceRefs || [] };
+      }
+      return changedStudents(current, students);
+    });
   } else if (key === "calendar:events") {
     await set(ref(db, "calendarEvents"), value);
   } else if (key === "lastBackupAt") {
@@ -267,4 +323,5 @@ export async function saveStudentFirstKey(key, value) {
 
 export function clearStudentFirstCache() {
   cache.clear();
+  roots.clear();
 }

@@ -45,7 +45,7 @@
     "portalInvites": {
       "$code": {
         ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (data.exists() && data.child('revoked').val() != true && (!data.child('claimedBy').exists() || data.child('claimedBy').val() == auth.uid)))",
-        ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (!data.exists() && newData.child('claimedBy').val() == auth.uid && newData.child('studentId').exists()) || (data.exists() && !data.child('claimedBy').exists() && newData.child('claimedBy').val() == auth.uid))"
+        ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (data.exists() && !data.child('claimedBy').exists() && data.child('revoked').val() != true && newData.child('claimedBy').val() == auth.uid && newData.child('studentId').val() == data.child('studentId').val() && newData.child('code').val() == data.child('code').val() && newData.child('role').val() == data.child('role').val() && newData.child('revoked').val() == data.child('revoked').val() && newData.child('createdAt').val() == data.child('createdAt').val()))"
       }
     },
     "portalAccounts": {
@@ -53,13 +53,33 @@
       ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       "$uid": {
         ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'yzhsage@gmail.com')",
-        ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (auth.uid == $uid && newData.child('studentIds').exists() && newData.child('inviteCode').exists() && root.child('portalInvites').child(newData.child('inviteCode').val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(newData.child('inviteCode').val()).child('studentId').val() == newData.child('studentId').val()))"
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'yzhsage@gmail.com')",
+        "uid": {
+          ".validate": "newData.val() == $uid"
+        },
+        "email": {
+          ".validate": "newData.isString()"
+        },
+        "displayName": {
+          ".validate": "newData.isString()"
+        },
+        "boundAt": {
+          ".validate": "newData.isString()"
+        },
+        "studentIds": {
+          "$studentId": {
+            ".validate": "auth.token.email == 'yzhsage@gmail.com' || (newData.isString() && root.child('portalInvites').child(newData.val()).child('claimedBy').val() == $uid && root.child('portalInvites').child(newData.val()).child('studentId').val() == $studentId)"
+          }
+        },
+        "$other": {
+          ".validate": "false"
+        }
       }
     },
     "portalStudentData": {
       ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       "$studentId": {
-        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val() == true || root.child('portalAccounts').child(auth.uid).child('studentId').val() == $studentId)",
+        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).isString() && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('revoked').val() != true))",
         ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
       }
     }

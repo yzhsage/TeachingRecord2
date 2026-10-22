@@ -321,12 +321,36 @@ function isStudentOnAttendanceList(student, dateStr, attendanceData) {
 /* Storage helpers                                                     */
 /* ------------------------------------------------------------------ */
 
+/* Load failures are tracked app-wide. A failed read used to come back as
+   "empty", which both hid the records and let the next save overwrite the
+   real data with that empty copy. Now a failed read throws, the store stays
+   "not ready" (so it is never saved), and a banner offers 重新讀取. */
+const loadErrorListeners = new Set();
+let failedLoadKeys = new Set();
+let loadRetryToken = 0;
+function notifyLoadErrors() { loadErrorListeners.forEach((fn) => fn()); }
+function markLoadFailed(key) { failedLoadKeys.add(key); notifyLoadErrors(); }
+function markLoadOk(key) { if (failedLoadKeys.delete(key)) notifyLoadErrors(); }
+function retryFailedLoads() { loadRetryToken += 1; failedLoadKeys = new Set(); notifyLoadErrors(); }
+function useLoadErrors() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const fn = () => force((n) => n + 1);
+    loadErrorListeners.add(fn);
+    return () => { loadErrorListeners.delete(fn); };
+  }, []);
+  return { failedCount: failedLoadKeys.size, retryToken: loadRetryToken };
+}
+
 async function loadKey(key, fallback) {
   try {
-    return await loadStudentFirstKey(key, fallback);
+    const value = await loadStudentFirstKey(key, fallback);
+    markLoadOk(key);
+    return value;
   } catch (e) {
     console.error("firebase load failed", key, e);
-    return fallback;
+    markLoadFailed(key);
+    throw e;
   }
 }
 function isRecord(value) {
@@ -406,6 +430,7 @@ const memoryCache = new Map();
 function useCachedStore(key, fallback) {
   const [value, setValue] = useState(() => (memoryCache.has(key) ? memoryCache.get(key) : fallback));
   const [ready, setReady] = useState(() => memoryCache.has(key));
+  const { retryToken } = useLoadErrors();
 
   useEffect(() => {
     let cancelled = false;
@@ -414,16 +439,21 @@ function useCachedStore(key, fallback) {
       setReady(true);
       return;
     }
+    setReady(false);
     (async () => {
-      const loaded = await loadKey(key, fallback);
-      if (cancelled) return;
-      memoryCache.set(key, loaded);
-      setValue(loaded);
-      setReady(true);
+      try {
+        const loaded = await loadKey(key, fallback);
+        if (cancelled) return;
+        memoryCache.set(key, loaded);
+        setValue(loaded);
+        setReady(true);
+      } catch {
+        // Stay not-ready: nothing is saved until a real copy has been read.
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, retryToken]);
 
   function update(updater) {
     setValue((prev) => {
@@ -587,13 +617,25 @@ export default function App() {
     });
   }
 
+  const { failedCount: failedLoadCount, retryToken: loadRetry } = useLoadErrors();
+  const [classLoadFailed, setClassLoadFailed] = useState(false);
   useEffect(() => {
+    if (ready) return;
+    let cancelled = false;
+    setClassLoadFailed(false);
     (async () => {
-      const idx = await loadKey("classIndex", []);
-      setClasses(dedupeById(idx));
-      setReady(true);
+      try {
+        const idx = await loadKey("classIndex", []);
+        if (cancelled) return;
+        setClasses(dedupeById(idx));
+        setReady(true);
+      } catch {
+        if (!cancelled) setClassLoadFailed(true);
+      }
     })();
-  }, []);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadRetry]);
 
   const classIdxSave = useDebouncedSave(classes, "classIndex", ready);
   useDebouncedSave(studentIndex, "studentIndex", studentIndexReady);
@@ -653,10 +695,14 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const v = await loadKey("lastBackupAt", null);
-      setLastBackupAt(v);
+      try {
+        const v = await loadKey("lastBackupAt", null);
+        setLastBackupAt(v);
+      } catch {
+        // Keep "unknown" (undefined) so no false backup warning is shown.
+      }
     })();
-  }, []);
+  }, [loadRetry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -826,7 +872,15 @@ export default function App() {
   if (!ready) {
     return (
       <Shell>
-        <div className="loading">載入中…</div>
+        {classLoadFailed ? (
+          <div className="load-error-screen">
+            <div className="load-error-title">班級資料沒有讀到</div>
+            <p>可能是網路不穩，或資料庫連線還沒準備好。你的資料沒有遺失。</p>
+            <button type="button" className="load-error-btn" onClick={retryFailedLoads}>重新讀取</button>
+          </div>
+        ) : (
+          <div className="loading">載入中…</div>
+        )}
       </Shell>
     );
   }
@@ -841,6 +895,12 @@ export default function App() {
         onToggleBackup={() => setBackupOpen((v) => !v)}
         onOpenPortalAdmin={() => setPortalAdminOpen(true)}
       />
+      {failedLoadCount > 0 && (
+        <div className="load-error-banner" role="alert">
+          <span>有部分紀錄沒有讀到（網路或連線不穩）。為了避免蓋掉原本的資料，這些紀錄暫時不會存檔，請先不要修改。</span>
+          <button type="button" className="load-error-btn" onClick={retryFailedLoads}>重新讀取</button>
+        </div>
+      )}
       {portalAdminOpen && <PortalAdminPanel onClose={() => setPortalAdminOpen(false)} />}
       <Toast message={toast} onClose={() => setToast(null)} />
       {backupOpen && (
@@ -1181,15 +1241,20 @@ function TodayView({ classes, onOpenClass, calendarEvents, onAddCalendarEvent, o
   const [selected, setSelected] = useState(todayStr());
   const [attendanceMap, setAttendanceMap] = useState({});
   const classIdsKey = classes.map((c) => c.id).join(",");
+  const { retryToken } = useLoadErrors();
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const entries = await Promise.all(classes.map(async (c) => [c.id, await loadKey("attendance:" + c.id, {})]));
+      const entries = await Promise.all(classes.map(async (c) => {
+        if (memoryCache.has("attendance:" + c.id)) return [c.id, memoryCache.get("attendance:" + c.id)];
+        try { return [c.id, await loadKey("attendance:" + c.id, {})]; }
+        catch { return [c.id, {}]; }
+      }));
       if (!cancelled) setAttendanceMap(Object.fromEntries(entries));
     })();
     return () => { cancelled = true; };
-  }, [classIdsKey]);
+  }, [classIdsKey, retryToken]);
 
   function hasSession(cls, dateStr) { return isSessionDay(cls, dateStr, attendanceMap[cls.id]); }
   const matches = classes.filter((c) => hasSession(c, selected)).map((c) => ({ c, time: getSessionInfo(c, selected).time })).sort((a, b) => parseTimeMinutes(a.time) - parseTimeMinutes(b.time));
@@ -2592,12 +2657,18 @@ function OrphanRecovery({ cls, onUpdateClass, onPurgeStudent }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [attendance, quiz, exam, fee] = await Promise.all([
-        loadKey(`attendance:${cls.id}`, {}),
-        loadKey(`quiz:${cls.id}`, { columns: [], scores: {} }),
-        loadKey(`exam:${cls.id}`, { columns: [], scores: {} }),
-        loadKey(`fee:${cls.id}`, { charges: [] }),
-      ]);
+      let attendance, quiz, exam, fee;
+      try {
+        [attendance, quiz, exam, fee] = await Promise.all([
+          loadKey(`attendance:${cls.id}`, {}),
+          loadKey(`quiz:${cls.id}`, { columns: [], scores: {} }),
+          loadKey(`exam:${cls.id}`, { columns: [], scores: {} }),
+          loadKey(`fee:${cls.id}`, { charges: [] }),
+        ]);
+      } catch {
+        if (!cancelled) { setOrphans([]); setLoading(false); }
+        return;
+      }
       const knownIds = new Set(cls.students.map((s) => s.id));
       const info = {}; // id -> { attDates: [], quizCount, examCount, feeCount }
       function touch(id) {
@@ -3003,6 +3074,10 @@ const CSS = `
 * { box-sizing: border-box; }
 .shell { min-height: 100vh; width: 100%; overflow-x: hidden; background: var(--paper); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; padding-bottom: 40px; }
 .loading { padding: 40px; text-align: center; color: var(--ink-soft); }
+.load-error-screen { max-width: 440px; margin: 60px auto; padding: 24px; background: #FFFFFF; border: 1px solid #E4DFD3; border-radius: 14px; text-align: center; line-height: 1.7; }
+.load-error-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.load-error-banner { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 12px 16px 0; padding: 10px 14px; border-radius: 10px; background: #FBEDEA; border: 1px solid #E8B8B0; color: #8C332E; font-size: 14px; line-height: 1.6; }
+.load-error-btn { border: 0; border-radius: 9px; padding: 8px 14px; background: #B8863B; color: #FFFFFF; font-weight: 700; cursor: pointer; }
 
 .topnav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--paper); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; margin-right: 4px; }

@@ -3,6 +3,7 @@ import { get, ref, set, update, runTransaction } from "firebase/database";
 import { signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { attendanceBaseStatus, attendanceHasStatus } from "./attendance";
+import { readPath } from "./firebaseRead";
 
 const ADMIN_EMAIL = "yzhsage@gmail.com";
 function accountStudentIds(account) {
@@ -106,15 +107,13 @@ export default function ParentPortal({ user }) {
     setLoading(true);
     setError("");
     try {
-      const accountSnapshot = await get(ref(db, `portalAccounts/${user.uid}`));
-      const nextAccount = accountSnapshot.val();
+      const nextAccount = await readPath(`portalAccounts/${user.uid}`, "帳戶資料");
       setAccount(nextAccount || null);
       const studentIds = accountStudentIds(nextAccount);
       if (!studentIds.length) return;
       const activeStudentId = selectedStudentId && studentIds.includes(selectedStudentId) ? selectedStudentId : studentIds[0];
       setSelectedStudentId(activeStudentId);
-      const portalSnapshot = await get(ref(db, `portalStudentData/${activeStudentId}`));
-      const portalData = portalSnapshot.val();
+      const portalData = await readPath(`portalStudentData/${activeStudentId}`, "查閱資料");
       if (!portalData) throw new Error("管理者尚未同步這位學生的查閱資料，請聯絡管理者。");
       setStudent(portalData.student || null); setClasses(portalData.classes || {}); setAssessments(portalData.assessments || {}); setAttendance(portalData.attendance || {}); setJournal(portalData.journal || {});
     } catch (err) {
@@ -194,16 +193,27 @@ export function PortalAdminPanel({ onClose }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [loadState, setLoadState] = useState("loading"); // loading | ready | error
+
   async function load() {
-    const [studentSnap, classSnap, accountSnap] = await Promise.all([
-      withTimeout(get(ref(db, "students")), "學生資料"),
-      withTimeout(get(ref(db, "classes")), "班級資料"),
-      withTimeout(get(ref(db, "portalAccounts")), "家長帳戶"),
-    ]);
-    setStudents(studentSnap.val() || {}); setClasses(classSnap.val() || {}); setAccounts(accountSnap.val() || {});
-    if (!studentId) setStudentId(Object.keys(studentSnap.val() || {})[0] || "");
+    setLoadState("loading");
+    try {
+      const [nextStudents, nextClasses, nextAccounts] = await Promise.all([
+        readPath("students", "學生資料"),
+        readPath("classes", "班級資料"),
+        readPath("portalAccounts", "家長帳戶"),
+      ]);
+      const data = { students: nextStudents || {}, classes: nextClasses || {}, accounts: nextAccounts || {} };
+      setStudents(data.students); setClasses(data.classes); setAccounts(data.accounts);
+      setStudentId((current) => current || Object.keys(data.students)[0] || "");
+      setLoadState("ready");
+      return data;
+    } catch (err) {
+      setLoadState("error");
+      throw err;
+    }
   }
-  useEffect(() => { load().catch((err) => setMessage(friendlyError(err, "讀取學生名單失敗"))); }, []);
+  useEffect(() => { load().catch((err) => setMessage(friendlyError(err, "讀取學生名單失敗，請按「同步」再試一次"))); }, []);
 
   async function createInvite() {
     if (!studentId) return;
@@ -213,18 +223,23 @@ export function PortalAdminPanel({ onClose }) {
   }
 
   async function syncAll() {
-    setBusy(true); setMessage("同步中：正在讀取成績與出缺勤資料…");
+    setBusy(true);
     try {
+      // Always read a fresh student list here, so pressing 同步 works even if
+      // the list was still loading (or failed) when the window opened.
+      setMessage("同步中：正在讀取學生名單…");
+      const { students, classes } = await load();
       const studentIds = Object.keys(students);
-      if (!studentIds.length) throw new Error("沒有讀到任何學生，所以沒有可以同步的內容。請關閉視窗後重新整理頁面再試一次。");
-      const [assessmentSnap, attendanceSnap, journalSnap] = await Promise.all([
-        withTimeout(get(ref(db, "assessments")), "成績資料"),
-        withTimeout(get(ref(db, "attendance")), "出缺勤資料"),
-        withTimeout(get(ref(db, "attendanceJournal")), "上課日誌"),
+      if (!studentIds.length) throw new Error("資料庫裡讀不到任何學生，所以沒有可以同步的內容。");
+      setMessage("同步中：正在讀取成績與出缺勤資料…");
+      const [assessmentValue, attendanceValue, journalValue] = await Promise.all([
+        readPath("assessments", "成績資料"),
+        readPath("attendance", "出缺勤資料"),
+        readPath("attendanceJournal", "上課日誌"),
       ]);
-      const assessments = assessmentSnap.val() || {};
-      const attendance = attendanceSnap.val() || {};
-      const journal = journalSnap.val() || {};
+      const assessments = assessmentValue || {};
+      const attendance = attendanceValue || {};
+      const journal = journalValue || {};
       const counts = { assessments: Object.keys(assessments).length, attendance: Object.keys(attendance).length, journal: Object.keys(journal).length };
       if (counts.assessments === 0 && counts.attendance === 0) {
         setMessage("資料庫裡目前讀不到任何成績或出缺勤紀錄（成績 0 筆、出缺勤 0 筆）。為了避免把家長看到的舊資料清空，這次沒有同步。請到 Firebase 後台 → Realtime Database → 資料，確認 attendance 和 assessments 這兩項是否還在。");
@@ -240,7 +255,7 @@ export function PortalAdminPanel({ onClose }) {
   }
 
 
-  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>{busy ? "同步中…" : "同步全部學生查閱資料"}</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{message && <div className="portal-admin-message" role="status" aria-live="polite">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{accountStudentIds(account).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
+  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>{busy ? "同步中…" : "同步全部學生查閱資料"}</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{loadState === "loading" && !message && <div className="portal-admin-message" role="status">正在讀取學生名單…</div>}{message && <div className="portal-admin-message" role="status" aria-live="polite">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{accountStudentIds(account).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
 }
 
 const PORTAL_CSS = `
