@@ -289,6 +289,18 @@ async function saveStudentsFromClasses(value) {
   });
 }
 
+/* Other modules (the family-view updater) listen for finished saves. */
+const savedListeners = new Set();
+export function onStudentFirstSaved(listener) {
+  savedListeners.add(listener);
+  return () => savedListeners.delete(listener);
+}
+function notifySaved(key) {
+  for (const listener of savedListeners) {
+    try { listener(key); } catch (error) { console.error("save listener failed", key, error); }
+  }
+}
+
 export async function saveStudentFirstKey(key, value) {
   cache.set(key, clone(value));
   if (key === "classIndex") {
@@ -318,7 +330,22 @@ export async function saveStudentFirstKey(key, value) {
   } else if (key.startsWith("fee:")) {
     await saveFees(key.slice("fee:".length), value);
   }
+  notifySaved(key);
   return true;
+}
+
+const RECORD_ROOTS = ["students", "classes", "attendance", "attendanceJournal", "assessments"];
+
+/** The raw lists the student cards are built from. Uses the same local copy
+    the save code keeps up to date, so just-saved edits show immediately. */
+export async function loadRecordRoots() {
+  const values = await Promise.all(RECORD_ROOTS.map((path) => readRoot(path)));
+  return clone(Object.fromEntries(RECORD_ROOTS.map((path, index) => [path, values[index]])));
+}
+
+/** Forget the local copy so the next loadRecordRoots() downloads fresh data. */
+export function invalidateRecordRoots() {
+  for (const path of RECORD_ROOTS) roots.delete(path);
 }
 
 export function clearStudentFirstCache() {

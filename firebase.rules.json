@@ -43,6 +43,7 @@
       ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
     },
     "portalInvites": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       "$code": {
         ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (data.exists() && data.child('revoked').val() != true && (!data.child('claimedBy').exists() || data.child('claimedBy').val() == auth.uid)))",
         ".write": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (data.exists() && !data.child('claimedBy').exists() && data.child('revoked').val() != true && newData.child('claimedBy').val() == auth.uid && newData.child('studentId').val() == data.child('studentId').val() && newData.child('code').val() == data.child('code').val() && newData.child('role').val() == data.child('role').val() && newData.child('revoked').val() == data.child('revoked').val() && newData.child('createdAt').val() == data.child('createdAt').val()))"
@@ -77,6 +78,7 @@
       }
     },
     "portalStudentData": {
+      ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       "$studentId": {
         ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).isString() && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('revoked').val() != true))",

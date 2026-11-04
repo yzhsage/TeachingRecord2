@@ -11,7 +11,8 @@ import _ from "lodash";
 import { signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
 import { loadStudentFirstKey, saveStudentFirstKey } from "./studentFirstStorage";
-import { PortalAdminPanel } from "./ParentPortal.jsx";
+import StudentOverview from "./StudentOverview.jsx";
+import { startPortalAutoPublish } from "./portalPublish";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
 import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
@@ -599,7 +600,6 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [returnView, setReturnView] = useState("today");
   const [backupOpen, setBackupOpen] = useState(false);
-  const [portalAdminOpen, setPortalAdminOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState(undefined); // undefined = still loading
   const fileInputRef = useRef(null);
@@ -639,6 +639,12 @@ export default function App() {
 
   const classIdxSave = useDebouncedSave(classes, "classIndex", ready);
   useDebouncedSave(studentIndex, "studentIndex", studentIndexReady);
+
+  // Keeps what families see up to date after every save (no 同步 button).
+  useEffect(() => {
+    if (!ready) return undefined;
+    return startPortalAutoPublish();
+  }, [ready]);
 
   useEffect(() => {
     if (!ready || !studentIndexReady) return;
@@ -893,7 +899,6 @@ export default function App() {
         saveStatus={classIdxSave}
         backupOverdue={backupOverdue}
         onToggleBackup={() => setBackupOpen((v) => !v)}
-        onOpenPortalAdmin={() => setPortalAdminOpen(true)}
       />
       {failedLoadCount > 0 && (
         <div className="load-error-banner" role="alert">
@@ -901,7 +906,6 @@ export default function App() {
           <button type="button" className="load-error-btn" onClick={retryFailedLoads}>重新讀取</button>
         </div>
       )}
-      {portalAdminOpen && <PortalAdminPanel onClose={() => setPortalAdminOpen(false)} />}
       <Toast message={toast} onClose={() => setToast(null)} />
       {backupOpen && (
         <div className="view-pad" style={{ paddingBottom: 0 }}>
@@ -953,6 +957,7 @@ export default function App() {
           onDelete={deleteClass}
         />
       )}
+      {view === "students" && <StudentOverview />}
       {view === "detail" && selectedClass && (
         <ClassDetail
           cls={selectedClass}
@@ -983,7 +988,7 @@ function Shell({ children }) {
 /* Top nav                                                              */
 /* ------------------------------------------------------------------ */
 
-function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup, onOpenPortalAdmin }) {
+function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
   return (
     <header className="topnav">
       <div className="brand">
@@ -1000,11 +1005,11 @@ function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup, onOp
       </div>
       <nav className="nav-pills" aria-label="主要導覽">
         <button className={"pill nav-pill" + (view === "today" ? " pill-active" : "")} onClick={() => setView("today")}><CalendarDays size={15} />行事曆</button>
-        <button className={"pill nav-pill" + (view !== "today" ? " pill-active" : "")} onClick={() => setView("classes")}><Users size={15} />所有班級</button>
+        <button className={"pill nav-pill" + (view === "classes" || view === "detail" ? " pill-active" : "")} onClick={() => setView("classes")}><Users size={15} />所有班級</button>
+        <button className={"pill nav-pill" + (view === "students" ? " pill-active" : "")} onClick={() => setView("students")}><GraduationCap size={15} />學生總覽</button>
       </nav>
       <div className="topnav-actions">
         <SaveIndicator status={saveStatus.status} onRetry={saveStatus.retry} />
-        <button className="pill utility-pill" onClick={onOpenPortalAdmin} title="家長與學生查閱帳戶">家長帳戶</button>
         <button className={"pill utility-pill" + (backupOverdue ? " pill-warning" : "")} onClick={onToggleBackup} title="資料備份">備份{backupOverdue ? " · 待處理" : ""}</button>
         <button className="pill utility-pill logout-pill" onClick={() => signOut(auth)} title="登出">登出</button>
       </div>

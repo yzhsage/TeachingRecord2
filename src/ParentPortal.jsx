@@ -1,26 +1,20 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { get, ref, set, update, runTransaction } from "firebase/database";
+import React, { useEffect, useState } from "react";
+import { get, ref, runTransaction, update } from "firebase/database";
 import { signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { attendanceBaseStatus, attendanceHasStatus } from "./attendance";
 import { readPath } from "./firebaseRead";
+import { accountStudentIds } from "./studentRecords.js";
+import StudentCard from "./StudentCard.jsx";
+
+/* What families and students see after logging in: their own child's card,
+   straight away. The teacher's app keeps these copies up to date by itself. */
 
 const ADMIN_EMAIL = "yzhsage@gmail.com";
-function accountStudentIds(account) {
-  if (Array.isArray(account?.studentIds)) return account.studentIds.filter(Boolean);
-  if (account?.studentIds && typeof account.studentIds === "object") return Object.entries(account.studentIds).filter(([, code]) => typeof code === "string" && code).map(([id]) => id);
-  return [];
-}
+export function isAdminUser(user) { return user?.email?.toLowerCase() === ADMIN_EMAIL; }
 
-function fmtDate(value) {
-  return value ? String(value).replaceAll("-", "/") : "";
-}
+const isPermission = (error) => /permission/i.test(String(error?.code || error?.message || error || ""));
 
-function valuesOf(value) {
-  return value && typeof value === "object" ? Object.values(value) : [];
-}
-
-function ActivationView({ user, onBound, existingAccount = null }) {
+function ActivationView({ user, onBound, onCancel }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -35,18 +29,21 @@ function ActivationView({ user, onBound, existingAccount = null }) {
       const inviteRef = ref(db, `portalInvites/${normalized}`);
       let invite = null;
       try { invite = (await get(inviteRef)).val(); }
-      catch { throw new Error("啟用碼無效、已使用或已失效。"); }
-      if (!invite || invite.revoked || (invite.claimedBy && invite.claimedBy !== user.uid)) {
-        throw new Error("啟用碼無效、已使用或已失效。");
+      catch (err) {
+        if (isPermission(err)) throw new Error("認證碼不正確、已被使用或已停用，請再確認一次。");
+        throw new Error("網路不穩，請稍後再試。");
       }
-      if (!invite.studentId) throw new Error("啟用碼尚未指定學生，請聯絡管理者。");
+      if (!invite || invite.revoked || (invite.claimedBy && invite.claimedBy !== user.uid)) throw new Error("認證碼不正確、已被使用或已停用，請再確認一次。");
+      if (!invite.studentId) throw new Error("這組認證碼還沒有指定學生，請聯絡老師。");
       if (invite.claimedBy !== user.uid) {
         const claim = await runTransaction(inviteRef, (current) => {
           if (!current || current.revoked || current.claimedBy) return;
           return { ...current, claimedBy: user.uid, claimedAt: new Date().toISOString() };
         });
-        if (!claim.committed) throw new Error("啟用碼已被其他帳號使用。");
+        if (!claim.committed) throw new Error("這組認證碼剛剛已被其他帳戶使用。");
       }
+      // Safe to repeat: if a previous try stopped halfway, entering the same
+      // code again finishes the binding.
       await update(ref(db, `portalAccounts/${user.uid}`), {
         uid: user.uid,
         email: user.email || "",
@@ -56,7 +53,7 @@ function ActivationView({ user, onBound, existingAccount = null }) {
       });
       onBound(invite.studentId);
     } catch (err) {
-      setError(err.message || "啟用失敗，請稍後再試。");
+      setError(err.message || "設定失敗，請稍後再試。");
     } finally {
       setBusy(false);
     }
@@ -64,202 +61,123 @@ function ActivationView({ user, onBound, existingAccount = null }) {
 
   return (
     <div className="portal-shell">
-      <div className="portal-card portal-activation-card">
-        <div className="portal-kicker">TeachingRecord2</div>
-        <h1>第一次登入設定</h1>
-        <p>此帳戶尚未綁定學生。請輸入管理者為學生建立的 8 碼認證碼，系統會直接開啟指定學生的資料。</p>
+      <div className="portal-box portal-activation">
+        <div className="portal-kicker">教學紀錄</div>
+        <h1>{onCancel ? "綁定另一位學生" : "第一次登入"}</h1>
+        <p>請輸入老師給你的 8 碼認證碼。只需要輸入一次，之後登入就會直接看到學生的學習紀錄。</p>
         <form onSubmit={activate}>
-          <label className="portal-field"><span>學生 8 碼認證碼</span><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="例如 A7K3P9Q2" maxLength={8} autoFocus /></label>
-          {error && <div className="portal-error">{error}</div>}
-          <button className="portal-primary" disabled={busy || !code.trim()}>{busy ? "設定中…" : "開始查看"}</button>
+          <label className="portal-field"><span>8 碼認證碼</span><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/\s/g, ""))} placeholder="例如 A7K3P9Q2" maxLength={8} autoFocus autoComplete="off" /></label>
+          {error && <div className="portal-error" role="alert">{error}</div>}
+          <button className="portal-primary" disabled={busy || code.trim().length < 8}>{busy ? "設定中…" : "開始查看"}</button>
         </form>
-        <button className="portal-link-button" onClick={() => signOut(auth)}>使用其他 Google 帳戶</button>
+        {onCancel
+          ? <button className="portal-link" onClick={onCancel}>取消，回到學習紀錄</button>
+          : <button className="portal-link" onClick={() => signOut(auth)}>改用其他帳戶登入</button>}
+        <div className="portal-who">目前登入：{user.email || user.displayName || "（沒有電子郵件）"}</div>
       </div>
+      <style>{PORTAL_CSS}</style>
     </div>
   );
 }
 
-function scoreRows(assessments, studentId) {
-  return valuesOf(assessments).filter((row) => row.studentId === studentId && row.score !== "" && row.score != null)
-    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-}
-
-function attendanceRows(attendance, journal, studentId, classIds) {
-  const rows = valuesOf(attendance).filter((row) => row.studentId === studentId && classIds.has(row.classId));
-  const journalByKey = new Map(valuesOf(journal).map((row) => [`${row.classId}|${row.date}`, row]));
-  return rows.map((row) => ({ ...row, journal: journalByKey.get(`${row.classId}|${row.date}`) || {} }))
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-}
-
 export default function ParentPortal({ user }) {
-  const [account, setAccount] = useState(null);
-  const [student, setStudent] = useState(null);
-  const [classes, setClasses] = useState({});
-  const [assessments, setAssessments] = useState({});
-  const [attendance, setAttendance] = useState({});
-  const [journal, setJournal] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [addingChild, setAddingChild] = useState(false);
+  const [state, setState] = useState({ status: "loading", error: "" });
+  const [studentIds, setStudentIds] = useState([]);
+  const [entries, setEntries] = useState({}); // id -> { data, error }
+  const [activeId, setActiveId] = useState("");
+  const [adding, setAdding] = useState(false);
 
-  async function loadAccount() {
-    setLoading(true);
-    setError("");
+  async function load(preferId) {
+    setState({ status: "loading", error: "" });
     try {
-      const nextAccount = await readPath(`portalAccounts/${user.uid}`, "帳戶資料");
-      setAccount(nextAccount || null);
-      const studentIds = accountStudentIds(nextAccount);
-      if (!studentIds.length) return;
-      const activeStudentId = selectedStudentId && studentIds.includes(selectedStudentId) ? selectedStudentId : studentIds[0];
-      setSelectedStudentId(activeStudentId);
-      const portalData = await readPath(`portalStudentData/${activeStudentId}`, "查閱資料");
-      if (!portalData) throw new Error("管理者尚未同步這位學生的查閱資料，請聯絡管理者。");
-      setStudent(portalData.student || null); setClasses(portalData.classes || {}); setAssessments(portalData.assessments || {}); setAttendance(portalData.attendance || {}); setJournal(portalData.journal || {});
+      const account = await readPath(`portalAccounts/${user.uid}`, "帳戶資料");
+      const ids = accountStudentIds(account);
+      const results = await Promise.allSettled(ids.map((id) => readPath(`portalStudentData/${id}`, "學習紀錄")));
+      const next = {};
+      ids.forEach((id, index) => {
+        const result = results[index];
+        if (result.status === "fulfilled") next[id] = { data: result.value, error: result.value ? "" : "missing" };
+        else next[id] = { data: null, error: isPermission(result.reason) ? "denied" : "failed" };
+      });
+      setStudentIds(ids);
+      setEntries(next);
+      setActiveId((current) => [preferId, current].find((id) => id && ids.includes(id)) || ids.find((id) => next[id]?.data) || ids[0] || "");
+      setState({ status: "ready", error: "" });
     } catch (err) {
-      setError(err.message || "資料載入失敗。");
-    } finally { setLoading(false); }
+      setState({ status: "error", error: isPermission(err) ? "沒有讀取權限" : "網路不穩或連線還沒準備好" });
+    }
   }
 
-  useEffect(() => { loadAccount(); }, [user.uid, selectedStudentId]);
+  useEffect(() => { load(); }, [user.uid]);
 
-  const enrollmentRows = useMemo(() => valuesOf(student?.enrollments), [student]);
-  const classIds = useMemo(() => new Set(enrollmentRows.map((row) => row.classId)), [enrollmentRows]);
-  const scoreList = useMemo(() => scoreRows(assessments, student?.id), [assessments, student]);
-  const attendanceList = useMemo(() => attendanceRows(attendance, journal, student?.id, classIds), [attendance, journal, student, classIds]);
+  if (state.status === "loading") return <div className="portal-shell"><div className="portal-loading">載入中…</div><style>{PORTAL_CSS}</style></div>;
+  if (state.status === "error") {
+    return (
+      <div className="portal-shell">
+        <div className="portal-box portal-activation"><h1>資料暫時無法載入</h1><p>{state.error}，請再試一次。</p><button className="portal-primary" onClick={() => load()}>重新載入</button><button className="portal-link" onClick={() => signOut(auth)}>登出</button></div>
+        <style>{PORTAL_CSS}</style>
+      </div>
+    );
+  }
+  if (!studentIds.length || adding) {
+    return <ActivationView user={user} onCancel={studentIds.length ? () => setAdding(false) : null} onBound={(id) => { setAdding(false); load(id); }} />;
+  }
 
-  if (loading) return <div className="portal-shell"><div className="portal-loading">載入中…</div></div>;
-  const boundStudentIds = accountStudentIds(account);
-  if (!boundStudentIds.length || addingChild) return <ActivationView user={user} existingAccount={account} onBound={(studentId) => { setAddingChild(false); setSelectedStudentId(studentId); loadAccount(); }} />;
-  if (error) return <div className="portal-shell"><div className="portal-card"><h1>資料暫時無法載入</h1><p className="portal-error">{error}</p><button className="portal-primary" onClick={loadAccount}>重新載入</button></div></div>;
+  const active = entries[activeId] || {};
+  const nameOf = (id) => entries[id]?.data?.student?.displayName || "學生";
 
   return (
     <div className="portal-shell">
-      <header className="portal-header"><div><div className="portal-kicker">TeachingRecord2 · 學習紀錄</div><h1>{student?.displayName || "學生"}</h1><p>這是您的個人學習紀錄</p>{boundStudentIds.length > 1 && <label className="portal-switcher"><span>切換學生</span><select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>{boundStudentIds.map((id) => <option key={id} value={id}>{id === student?.id ? student.displayName : id}</option>)}</select></label>}<button className="portal-link-button" onClick={() => setAddingChild(true)}>＋綁定另一位學生</button></div><button className="portal-link-button" onClick={() => signOut(auth)}>登出</button></header>
+      <header className="portal-top">
+        <div className="portal-brand">教學紀錄 · 學習紀錄查詢</div>
+        <div className="portal-top-actions">
+          <button className="portal-link" onClick={() => setAdding(true)}>＋綁定另一位學生</button>
+          <button className="portal-link" onClick={() => signOut(auth)}>登出</button>
+        </div>
+      </header>
+      {studentIds.length > 1 && (
+        <nav className="portal-tabs" aria-label="選擇學生">
+          {studentIds.map((id) => <button key={id} className={id === activeId ? "active" : ""} onClick={() => setActiveId(id)}>{nameOf(id)}</button>)}
+        </nav>
+      )}
       <main className="portal-main">
-        <section className="portal-card"><h2>目前班級</h2><div className="portal-class-list">{enrollmentRows.map((enrollment) => <div className="portal-class-chip" key={enrollment.id}>{enrollment.className || classes[enrollment.classId]?.name || "班級"}<span>{enrollment.school || ""}{enrollment.group ? ` · ${enrollment.group}` : ""}</span></div>)}</div></section>
-        <section className="portal-card"><h2>歷次成績</h2>{scoreList.length === 0 ? <p className="portal-muted">目前沒有可顯示的成績。</p> : <div className="portal-table-wrap"><table className="portal-table"><thead><tr><th>考試</th><th>日期</th><th>班級</th><th>成績</th></tr></thead><tbody>{scoreList.map((row) => <tr key={`${row.type}-${row.assessmentId}-${row.classId}`}><td>{row.name || "評量"}</td><td>{row.type === "exam" ? "" : fmtDate(row.date)}</td><td>{classes[row.classId]?.name || ""}</td><td className="portal-score">{row.score}</td></tr>)}</tbody></table></div>}</section>
-        <section className="portal-card"><h2>出缺勤與補課</h2>{attendanceList.length === 0 ? <p className="portal-muted">目前沒有可顯示的出缺勤紀錄。</p> : <div className="portal-attendance-list">{attendanceList.map((row) => { const absent = ["請假", "曠課"].includes(attendanceBaseStatus(row.status)); const video = row.journal?.videoUrl; return <article className="portal-attendance-row" key={`${row.classId}-${row.date}`}><div><strong>{fmtDate(row.date)}</strong><span>{classes[row.classId]?.name || ""}</span></div><div className="portal-status">{Array.isArray(row.status) ? row.status.join("、") : row.status}</div><div className="portal-journal">{row.journal?.content && <p><b>教學內容：</b>{row.journal.content}</p>}{row.journal?.note && <p><b>備註：</b>{row.journal.note}</p>}{absent && video && <a href={video} target="_blank" rel="noreferrer">開啟補課影片</a>}</div></article>; })}</div>}</section>
+        {active.data ? <StudentCard key={activeId} snapshot={active.data} /> : (
+          <div className="portal-box">
+            {active.error === "denied" && <><h1>這位學生的紀錄目前無法查看</h1><p>認證碼可能已被老師停用，或需要重新輸入一次。如果有新的認證碼，請按下方按鈕輸入。</p><button className="portal-primary" onClick={() => setAdding(true)}>輸入認證碼</button></>}
+            {active.error === "missing" && <><h1>學習紀錄準備中</h1><p>老師那邊還沒有產生這位學生的紀錄，通常老師下次開啟系統後就會出現，請稍後再回來看看。</p><button className="portal-primary" onClick={() => load(activeId)}>重新整理</button></>}
+            {active.error === "failed" && <><h1>資料暫時無法載入</h1><p>網路不穩或連線還沒準備好，請再試一次。</p><button className="portal-primary" onClick={() => load(activeId)}>重新載入</button></>}
+          </div>
+        )}
       </main>
       <style>{PORTAL_CSS}</style>
     </div>
   );
 }
 
-export function isAdminUser(user) { return user?.email?.toLowerCase() === ADMIN_EMAIL; }
-
-function makeCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
-}
-
-function buildStudentPortalData(studentId, students, classes, assessments, attendance, journal) {
-  const student = students[studentId];
-  if (!student) return null;
-  const classIds = new Set(Object.values(student.enrollments || {}).map((item) => item.classId));
-  return {
-    generatedAt: new Date().toISOString(),
-    student: { id: student.id || studentId, displayName: student.displayName || student.name || "", enrollments: student.enrollments || {} },
-    classes: Object.fromEntries(Object.entries(classes || {}).filter(([id]) => classIds.has(id)).map(([id, item]) => [id, { id, name: item.name || "", subject: item.subject || "", grade: item.grade || "" }])),
-    assessments: Object.fromEntries(Object.entries(assessments || {}).filter(([, item]) => item.studentId === studentId && classIds.has(item.classId))),
-    attendance: Object.fromEntries(Object.entries(attendance || {}).filter(([, item]) => item.studentId === studentId && classIds.has(item.classId))),
-    journal: Object.fromEntries(Object.entries(journal || {}).filter(([, item]) => classIds.has(item.classId))),
-  };
-}
-
-const READ_TIMEOUT_MS = 30000;
-function withTimeout(promise, label, ms = READ_TIMEOUT_MS) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}超過 ${ms / 1000} 秒沒有回應。請確認網路連線後重新整理頁面再試。`)), ms); }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-function friendlyError(err, fallback) {
-  const text = String(err?.message || err || "");
-  if (/permission/i.test(text)) return `${fallback}：沒有讀寫權限。請確認目前登入的是管理者帳號（${ADMIN_EMAIL}），而且 Firebase 規則已經發布成功。`;
-  return text ? `${fallback}：${text}` : fallback;
-}
-
-export function PortalAdminPanel({ onClose }) {
-  const [students, setStudents] = useState({});
-  const [classes, setClasses] = useState({});
-  const [accounts, setAccounts] = useState({});
-  const [code, setCode] = useState("");
-  const [studentId, setStudentId] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const [loadState, setLoadState] = useState("loading"); // loading | ready | error
-
-  async function load() {
-    setLoadState("loading");
-    try {
-      const [nextStudents, nextClasses, nextAccounts] = await Promise.all([
-        readPath("students", "學生資料"),
-        readPath("classes", "班級資料"),
-        readPath("portalAccounts", "家長帳戶"),
-      ]);
-      const data = { students: nextStudents || {}, classes: nextClasses || {}, accounts: nextAccounts || {} };
-      setStudents(data.students); setClasses(data.classes); setAccounts(data.accounts);
-      setStudentId((current) => current || Object.keys(data.students)[0] || "");
-      setLoadState("ready");
-      return data;
-    } catch (err) {
-      setLoadState("error");
-      throw err;
-    }
-  }
-  useEffect(() => { load().catch((err) => setMessage(friendlyError(err, "讀取學生名單失敗，請按「同步」再試一次"))); }, []);
-
-  async function createInvite() {
-    if (!studentId) return;
-    setBusy(true); setMessage("");
-    try { const nextCode = makeCode(); await set(ref(db, `portalInvites/${nextCode}`), { code: nextCode, studentId, role: "parent", createdAt: new Date().toISOString(), revoked: false }); setCode(nextCode); setMessage("啟用碼已建立，請複製給家長或學生。"); }
-    catch (err) { setMessage(err.message || "建立啟用碼失敗"); } finally { setBusy(false); }
-  }
-
-  async function syncAll() {
-    setBusy(true);
-    try {
-      // Always read a fresh student list here, so pressing 同步 works even if
-      // the list was still loading (or failed) when the window opened.
-      setMessage("同步中：正在讀取學生名單…");
-      const { students, classes } = await load();
-      const studentIds = Object.keys(students);
-      if (!studentIds.length) throw new Error("資料庫裡讀不到任何學生，所以沒有可以同步的內容。");
-      setMessage("同步中：正在讀取成績與出缺勤資料…");
-      const [assessmentValue, attendanceValue, journalValue] = await Promise.all([
-        readPath("assessments", "成績資料"),
-        readPath("attendance", "出缺勤資料"),
-        readPath("attendanceJournal", "上課日誌"),
-      ]);
-      const assessments = assessmentValue || {};
-      const attendance = attendanceValue || {};
-      const journal = journalValue || {};
-      const counts = { assessments: Object.keys(assessments).length, attendance: Object.keys(attendance).length, journal: Object.keys(journal).length };
-      if (counts.assessments === 0 && counts.attendance === 0) {
-        setMessage("資料庫裡目前讀不到任何成績或出缺勤紀錄（成績 0 筆、出缺勤 0 筆）。為了避免把家長看到的舊資料清空，這次沒有同步。請到 Firebase 後台 → Realtime Database → 資料，確認 attendance 和 assessments 這兩項是否還在。");
-        return;
-      }
-      setMessage(`同步中：讀到成績 ${counts.assessments} 筆、出缺勤 ${counts.attendance} 筆，正在寫入 ${studentIds.length} 位學生的查閱資料…`);
-      const next = {};
-      for (const id of studentIds) next[id] = buildStudentPortalData(id, students, classes, assessments, attendance, journal);
-      await withTimeout(update(ref(db, "portalStudentData"), next), "寫入查閱資料", 60000);
-      const withRecords = Object.values(next).filter((data) => data && (Object.keys(data.assessments).length || Object.keys(data.attendance).length)).length;
-      setMessage(`同步完成：${studentIds.length} 位學生（其中 ${withRecords} 位有成績或出缺勤），共成績 ${counts.assessments} 筆、出缺勤 ${counts.attendance} 筆。`);
-    } catch (err) { setMessage(friendlyError(err, "同步失敗")); } finally { setBusy(false); }
-  }
-
-
-  return <div className="portal-admin-overlay"><div className="portal-admin-card"><div className="portal-admin-head"><div><div className="portal-kicker">家長／學生查閱</div><h2>帳戶與 8 碼認證碼管理</h2></div><button className="portal-link-button" onClick={onClose}>關閉</button></div><p className="portal-muted">先同步查閱資料，再為指定學生建立 8 碼認證碼。家長或學生登入後輸入認證碼即可綁定；同一個帳戶可以分次綁定多位學生。</p><div className="portal-admin-actions"><button className="portal-primary" disabled={busy} onClick={syncAll}>{busy ? "同步中…" : "同步全部學生查閱資料"}</button><label className="portal-field"><span>指定學生</span><select value={studentId} onChange={(e) => setStudentId(e.target.value)}>{Object.entries(students).map(([id, item]) => <option key={id} value={id}>{item.displayName || item.name || id}</option>)}</select></label><button className="portal-primary" disabled={busy || !studentId} onClick={createInvite}>建立 8 碼認證碼</button>{code && <div className="portal-code">{code}</div>}</div>{loadState === "loading" && !message && <div className="portal-admin-message" role="status">正在讀取學生名單…</div>}{message && <div className="portal-admin-message" role="status" aria-live="polite">{message}</div>}<h3>目前已綁定帳戶</h3>{Object.keys(accounts).length === 0 ? <p className="portal-muted">尚無綁定帳戶。</p> : <div className="portal-account-list">{Object.values(accounts).map((account) => <div key={account.uid}><strong>{account.email || account.uid}</strong><span>{accountStudentIds(account).map((id) => students[id]?.displayName || id).join("、")}</span></div>)}</div>}</div><style>{PORTAL_ADMIN_CSS}</style></div>;
-}
-
 const PORTAL_CSS = `
-.portal-shell{min-height:100vh;background:#F7F4EE;color:#283044;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;padding:28px 18px}.portal-header,.portal-main{width:min(980px,100%);margin:0 auto}.portal-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:22px}.portal-header h1,.portal-card h1{margin:4px 0 8px;font-size:30px}.portal-header p,.portal-card p{color:#687080;line-height:1.7}.portal-kicker{color:#E56D5A;font-size:13px;font-weight:800;letter-spacing:.06em}.portal-main{display:grid;gap:16px}.portal-card{background:#FFF;border:1px solid #E7E0D5;border-radius:18px;padding:22px;box-shadow:0 8px 28px rgba(41,49,68,.06)}.portal-card h2{margin:0 0 14px;font-size:18px}.portal-class-list{display:flex;flex-wrap:wrap;gap:10px}.portal-class-chip{background:#EEF5F2;border-radius:12px;padding:10px 14px;font-weight:700}.portal-class-chip span{display:block;color:#6E7A76;font-size:12px;font-weight:500;margin-top:3px}.portal-table-wrap{overflow:auto}.portal-table{width:100%;border-collapse:collapse}.portal-table th,.portal-table td{text-align:left;padding:11px 8px;border-bottom:1px solid #EEE8DE}.portal-table th{color:#687080;font-size:12px}.portal-score{font-weight:800;color:#D15D4D}.portal-muted{margin:0}.portal-attendance-list{display:grid;gap:10px}.portal-attendance-row{display:grid;grid-template-columns:130px 100px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid #EEE8DE}.portal-attendance-row strong,.portal-attendance-row span{display:block}.portal-attendance-row span{font-size:12px;color:#687080;margin-top:4px}.portal-status{font-weight:800;color:#487D72}.portal-journal p{margin:0 0 5px;font-size:13px;white-space:pre-wrap}.portal-journal a{display:inline-block;margin-top:5px;color:#D15D4D;font-weight:800}.portal-activation-card{max-width:430px;margin:10vh auto}.portal-field{display:grid;gap:7px;margin:16px 0}.portal-field span{font-size:13px;font-weight:800}.portal-field input{border:1px solid #D9D5CE;border-radius:10px;padding:12px;font-size:16px}.portal-primary{border:0;border-radius:10px;padding:12px 16px;background:#E56D5A;color:#FFF;font-weight:800;cursor:pointer}.portal-primary:disabled{opacity:.5}.portal-link-button{border:0;background:none;color:#687080;cursor:pointer;padding:8px}.portal-error{color:#B23A34;font-size:13px;margin:10px 0}.portal-loading{min-height:100vh;display:grid;place-items:center;color:#687080}@media(max-width:700px){.portal-attendance-row{grid-template-columns:1fr;gap:5px}.portal-header h1{font-size:25px}}
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+.portal-shell{min-height:100vh;background:#FAF8F3;color:#21262B;font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,sans-serif;padding:18px 16px 48px;box-sizing:border-box}
+.portal-shell *{box-sizing:border-box}
+.portal-top,.portal-tabs,.portal-main{width:min(980px,100%);margin:0 auto}
+.portal-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid #E1DACB;margin-bottom:16px}
+.portal-brand{font-family:'Noto Serif TC',serif;font-weight:700;font-size:15px}
+.portal-top-actions{display:flex;gap:4px;flex-wrap:wrap}
+.portal-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.portal-tabs button{border:1px solid #E1DACB;background:#FFF;border-radius:999px;padding:8px 16px;font-size:14px;color:#5B6672;cursor:pointer;font-family:inherit}
+.portal-tabs button.active{background:#21262B;border-color:#21262B;color:#FFF;font-weight:700}
+.portal-box{background:#FFF;border:1px solid #E1DACB;border-radius:16px;padding:24px;line-height:1.7}
+.portal-box h1{font-family:'Noto Serif TC',serif;font-size:22px;margin:4px 0 6px}
+.portal-box p{color:#5B6672;font-size:14px;margin:0 0 14px}
+.portal-activation{max-width:420px;margin:8vh auto 0}
+.portal-kicker{color:#B8863B;font-size:12px;font-weight:700;letter-spacing:.08em}
+.portal-field{display:grid;gap:6px;margin:6px 0 12px}
+.portal-field span{font-size:13px;font-weight:700}
+.portal-field input{border:1px solid #D9D5CE;border-radius:10px;padding:12px;font-size:20px;letter-spacing:.15em;font-family:'IBM Plex Mono',monospace;text-transform:uppercase}
+.portal-primary{display:block;width:100%;border:0;border-radius:10px;padding:12px 16px;background:#21262B;color:#FFF;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+.portal-primary:disabled{opacity:.4;cursor:default}
+.portal-link{border:0;background:none;color:#5B6672;cursor:pointer;padding:8px;font-size:13px;font-family:inherit}
+.portal-activation .portal-link{display:block;margin:10px auto 0}
+.portal-error{color:#B23A34;font-size:13px;margin:0 0 10px}
+.portal-who{text-align:center;font-size:12px;color:#8A8F95;margin-top:6px;overflow-wrap:anywhere}
+.portal-loading{min-height:80vh;display:grid;place-items:center;color:#5B6672}
 `;
-
-const PORTAL_ADMIN_CSS = `.portal-admin-overlay{position:fixed;inset:0;z-index:50;background:rgba(31,39,56,.35);padding:7vh 18px;overflow:auto}.portal-admin-card{width:min(760px,100%);margin:0 auto;background:#FFF;border-radius:18px;padding:24px;box-shadow:0 18px 60px rgba(31,39,56,.24)}.portal-admin-head{display:flex;justify-content:space-between;gap:12px}.portal-admin-head h2{margin:4px 0 10px}.portal-admin-actions{display:flex;align-items:end;gap:10px;flex-wrap:wrap}.portal-admin-actions .portal-field{margin:0;min-width:220px}.portal-admin-actions select{border:1px solid #D9D5CE;border-radius:10px;padding:11px;font-size:15px}.portal-code{background:#FFF4D9;border:1px dashed #D5A942;border-radius:10px;padding:12px 16px;font-size:20px;font-weight:900;letter-spacing:.08em}.portal-admin-message{margin-top:14px;padding:10px 12px;background:#EEF5F2;border-radius:10px}.portal-admin-card h3{margin:24px 0 8px}.portal-account-list{display:grid;gap:8px}.portal-account-list>div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #EEE8DE}.portal-account-list span{color:#687080}`;
