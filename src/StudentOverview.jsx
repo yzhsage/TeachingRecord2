@@ -149,6 +149,8 @@ export default function StudentOverview() {
   const [classFilter, setClassFilter] = useState("all");
   const [showStopped, setShowStopped] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [bulkCodeBusy, setBulkCodeBusy] = useState(false);
+  const [bulkCodeMessage, setBulkCodeMessage] = useState("");
 
   async function loadPortal() {
     const [accounts, invites] = await Promise.allSettled([readPath("portalAccounts", "家長帳戶"), readPath("portalInvites", "認證碼")]);
@@ -170,6 +172,34 @@ export default function StudentOverview() {
       setRecords((current) => ({ ...current, status: "error", error: friendly(error) }));
     }
     loadPortal();
+  }
+
+  async function createMissingInvites() {
+    if (portal.error) {
+      setBulkCodeMessage(`目前無法讀取認證碼清單：${portal.error}`);
+      return;
+    }
+    const existingStudentIds = new Set(Object.values(portal.invites || {}).filter((invite) => invite?.studentId && invite.revoked !== true).map((invite) => invite.studentId));
+    const pending = rows.filter((row) => !existingStudentIds.has(row.id));
+    if (!pending.length) {
+      setBulkCodeMessage("目前每位學生都已有可用的認證碼。");
+      return;
+    }
+    setBulkCodeBusy(true); setBulkCodeMessage(`正在為 ${pending.length} 位學生產生認證碼…`);
+    try {
+      const used = new Set(Object.keys(portal.invites || {}));
+      const writes = pending.map((row) => {
+        let code = makeCode();
+        while (used.has(code)) code = makeCode();
+        used.add(code);
+        return set(ref(db, `portalInvites/${code}`), { code, studentId: row.id, role: "parent", createdAt: new Date().toISOString(), revoked: false });
+      });
+      await Promise.all(writes);
+      setBulkCodeMessage(`已自動建立 ${pending.length} 位學生的 8 碼認證碼。`);
+      await loadPortal();
+    } catch (error) {
+      setBulkCodeMessage(`自動建立失敗：${friendly(error)}`);
+    } finally { setBulkCodeBusy(false); }
   }
 
   useEffect(() => { load(); }, []);
@@ -251,9 +281,10 @@ export default function StudentOverview() {
           <h2 className="so-title">學生總覽</h2>
           <div className="so-subtitle">共 {rows.filter((row) => !row.stopped).length} 位在學學生{rows.some((row) => row.stopped) ? `，${rows.filter((row) => row.stopped).length} 位已停課` : ""}。點學生可以看他的完整紀錄。</div>
         </div>
-        <button type="button" className="so-ghost" disabled={records.status === "refreshing"} onClick={() => load(true)}>{records.status === "refreshing" ? "讀取中…" : "重新讀取"}</button>
+        <div className="so-head-actions"><button type="button" className="so-primary" disabled={bulkCodeBusy || !!portal.error} onClick={createMissingInvites}>{bulkCodeBusy ? "自動建立中…" : "自動建立全部認證碼"}</button><button type="button" className="so-ghost" disabled={records.status === "refreshing"} onClick={() => load(true)}>{records.status === "refreshing" ? "讀取中…" : "重新讀取"}</button></div>
       </div>
       <PublishStatusLine />
+      {bulkCodeMessage && <div className="so-note" role="status">{bulkCodeMessage}</div>}
       {records.status === "error" && <div className="so-alert">重新讀取失敗：{records.error}。下面顯示的是先前讀到的資料。</div>}
       <div className="so-toolbar">
         <input className="so-search" type="search" placeholder="搜尋姓名、班級或學校" value={query} onChange={(event) => setQuery(event.target.value)} />

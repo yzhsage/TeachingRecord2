@@ -80,18 +80,38 @@ function ScoreChart({ scores }) {
 
 const ATTENDANCE_PREVIEW = 20;
 
+
+function ScoreTable({ scores, allClasses }) {
+  const rows = [...scores].reverse();
+  const hasRank = rows.some((row) => row.rank);
+  if (!rows.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
+  return <div className="sc-table-wrap"><table className="sc-table"><thead><tr><th>考試</th><th>日期</th>{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead><tbody>{rows.map((row) => {
+    const diff = row.value !== null && row.classAvg !== null ? row.value - row.classAvg : null;
+    return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{row.range ? ` · ${row.range}` : ""}</div></td><td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
+  })}</tbody></table></div>;
+}
+
+function ScoreSections({ scores, allClasses }) {
+  const groups = allClasses.map((cls) => ({ cls, quiz: scores.filter((row) => row.classId === cls.id && row.type === "quiz"), exam: scores.filter((row) => row.classId === cls.id && row.type === "exam") })).filter((group) => group.quiz.length || group.exam.length);
+  if (!groups.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
+  return <div className="sc-score-groups">{groups.map(({ cls, quiz, exam }) => <section className="sc-score-group" key={cls.id}><h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>平時考</strong><span>{quiz.length} 筆</span></div><ScoreTable scores={quiz} allClasses={allClasses} /></div><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>段考</strong><span>{exam.length} 筆</span></div><ScoreTable scores={exam} allClasses={allClasses} /></div></section>)}</div>;
+}
+
 export default function StudentCard({ snapshot, footer = null, headerActions = null }) {
   const [classId, setClassId] = useState("all");
   const [type, setType] = useState("all");
   const [showAllAttendance, setShowAllAttendance] = useState(false);
+  const [attendanceFrom, setAttendanceFrom] = useState("");
+  const [attendanceTo, setAttendanceTo] = useState("");
+  const [attendanceStatus, setAttendanceStatus] = useState("all");
+  const [attendanceSort, setAttendanceSort] = useState("date");
   const card = useMemo(() => buildStudentCard(snapshot, { classId, type }), [snapshot, classId, type]);
   const allClasses = useMemo(() => buildStudentCard(snapshot)?.classes || [], [snapshot]);
 
   if (!card) return <div className="sc-root"><div className="sc-empty">找不到這位學生的資料。</div><style>{CARD_CSS}</style></div>;
   const { stats } = card;
-  const scoresDesc = [...card.scores].reverse();
-  const hasRank = card.scores.some((row) => row.rank);
-  const attendanceRows = showAllAttendance ? card.attendance : card.attendance.slice(0, ATTENDANCE_PREVIEW);
+  const filteredAttendance = card.attendance.filter((row) => (!attendanceFrom || row.date >= attendanceFrom) && (!attendanceTo || row.date <= attendanceTo) && (attendanceStatus === "all" || row.statuses.includes(attendanceStatus))).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
+  const attendanceRows = showAllAttendance ? filteredAttendance : filteredAttendance.slice(0, ATTENDANCE_PREVIEW);
   const school = [...new Set(allClasses.map((cls) => [cls.school, cls.grade].filter(Boolean).join(" · ")).filter(Boolean))][0] || "";
 
   return (
@@ -120,41 +140,9 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
         <Stat label="補課影片" value={String(stats.videoCount)} unit="部" detail={stats.absentCount ? (stats.missingVideoCount ? `缺課 ${stats.absentCount} 次，${stats.missingVideoCount} 次還沒有影片` : `缺課 ${stats.absentCount} 次，都有影片`) : "沒有缺課"} />
       </div>
 
-      <Section
-        title="考試成績"
-        extra={card.scoreTypes.length > 1 && (
-          <div className="sc-mini-tabs">
-            {[["all", "全部"], ["quiz", "平時考"], ["exam", "段考"]].map(([key, label]) => <button type="button" key={key} className={type === key ? "active" : ""} onClick={() => setType(key)}>{label}</button>)}
-          </div>
-        )}
-      >
-        {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : (
-          <>
-            <ScoreChart scores={card.scores} />
-            <div className="sc-table-wrap">
-              <table className="sc-table">
-                <thead><tr><th>考試</th><th>日期</th>{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead>
-                <tbody>
-                  {scoresDesc.map((row) => {
-                    const diff = row.value !== null && row.classAvg !== null ? row.value - row.classAvg : null;
-                    return (
-                      <tr key={row.id}>
-                        <td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{row.range ? ` · ${row.range}` : ""}</div></td>
-                        <td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>
-                        {allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}
-                        <td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td>
-                        <td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>
-                        {hasRank && <td className="num">{row.rank || "—"}</td>}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+      <Section title="考試成績" hint="已依班級分開；每個班級內再分為平時考與段考。">
+        {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <><ScoreChart scores={card.scores} /><ScoreSections scores={card.scores} allClasses={allClasses} /></>}
       </Section>
-
       <Section title="補課影片" hint={card.makeup.length ? "請假或曠課那一堂的上課影片，可以點開補看。" : ""}>
         {card.makeup.length === 0 ? <p className="sc-muted">沒有缺課紀錄，不需要補課。</p> : (
           <div className="sc-list">
@@ -172,8 +160,9 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
         )}
       </Section>
 
-      <Section title="出缺勤紀錄" hint={card.attendance.length ? `共 ${card.attendance.length} 筆，最新的在最上面。` : ""}>
-        {card.attendance.length === 0 ? <p className="sc-muted">目前沒有出缺勤紀錄。</p> : (
+      <Section title="出缺勤紀錄" hint={card.attendance.length ? `原始紀錄 ${card.attendance.length} 筆；可依日期、班級與狀態篩選。` : ""}>
+        <div className="sc-attendance-filters"><label>開始日期<input type="date" value={attendanceFrom} onChange={(e) => { setAttendanceFrom(e.target.value); setShowAllAttendance(false); }} /></label><label>結束日期<input type="date" value={attendanceTo} onChange={(e) => { setAttendanceTo(e.target.value); setShowAllAttendance(false); }} /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="all">全部狀態</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
+        {filteredAttendance.length === 0 ? <p className="sc-muted">目前篩選條件沒有出缺勤紀錄。</p> : (
           <>
             <div className="sc-list">
               {attendanceRows.map((row) => (
@@ -183,8 +172,8 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
                 </div>
               ))}
             </div>
-            {card.attendance.length > ATTENDANCE_PREVIEW && (
-              <button type="button" className="sc-more" onClick={() => setShowAllAttendance((value) => !value)}>{showAllAttendance ? "只看最近 20 筆" : `顯示全部 ${card.attendance.length} 筆`}</button>
+            {filteredAttendance.length > ATTENDANCE_PREVIEW && (
+              <button type="button" className="sc-more" onClick={() => setShowAllAttendance((value) => !value)}>{showAllAttendance ? "只看前 20 筆" : `顯示全部 ${filteredAttendance.length} 筆`}</button>
             )}
           </>
         )}
@@ -231,6 +220,7 @@ export const CARD_CSS = `
 .sc-table .num{text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',ui-monospace,monospace}
 .sc-cell-main{font-weight:700;min-width:6em}.sc-cell-sub{font-size:12px;color:var(--sc-soft);margin-top:2px}.sc-nowrap{white-space:nowrap}
 .sc-score{font-weight:700;font-size:15px}
+.sc-score-groups{display:grid;gap:14px;margin-top:12px}.sc-score-group{border:1px solid var(--sc-line);border-radius:12px;padding:13px;background:var(--sc-paper)}.sc-score-group h4{margin:0 0 10px;font-size:16px}.sc-score-kind{background:var(--sc-card);border-radius:10px;padding:10px;margin-top:9px}.sc-score-kind-head{display:flex;justify-content:space-between;align-items:center;color:var(--sc-soft);font-size:12px}.sc-score-kind-head strong{color:var(--sc-ink);font-size:14px}.sc-score-kind .sc-table-wrap{margin-top:4px}
 .sc-up,.sc-down{font-size:11px;margin-left:6px}.sc-up{color:#3F7D5C}.sc-down{color:#B23A34}
 .sc-list{display:grid;margin-top:8px}
 .sc-row{display:grid;grid-template-columns:150px 1fr auto;gap:12px;padding:11px 0;border-bottom:1px solid #F0EBE1;align-items:start}
@@ -243,6 +233,7 @@ export const CARD_CSS = `
 .sc-video{display:inline-block;background:var(--sc-ink);color:#FFF;text-decoration:none;font-size:13px;font-weight:700;border-radius:9px;padding:7px 12px;white-space:nowrap}
 .sc-no-video{font-size:12px;color:var(--sc-soft);white-space:nowrap}
 .sc-more{margin-top:8px;border:1px solid var(--sc-line);background:none;border-radius:9px;padding:7px 12px;font-size:13px;color:var(--sc-soft);cursor:pointer;font-family:inherit}
+.sc-attendance-filters{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0 3px}.sc-attendance-filters label{display:grid;gap:4px;color:var(--sc-soft);font-size:11px;font-weight:700}.sc-attendance-filters input,.sc-attendance-filters select{min-height:32px;border:1px solid var(--sc-line);border-radius:8px;background:#FFF;color:var(--sc-ink);padding:5px 8px;font-family:inherit;font-size:13px}
 .sc-updated{font-size:12px;color:var(--sc-soft);text-align:right}
 .sc-empty{padding:30px;text-align:center;color:var(--sc-soft)}
 @media(max-width:760px){.sc-col-class{display:none}.sc-section{padding:16px 14px}.sc-table{font-size:13px}.sc-table td,.sc-table th{padding-left:5px;padding-right:5px}.sc-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.sc-row{grid-template-columns:1fr;gap:6px}.sc-row-action{justify-self:start}.sc-name{font-size:24px}.sc-stat-value{font-size:24px}}
