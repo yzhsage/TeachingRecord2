@@ -52,7 +52,7 @@ function Section({ title, hint, children, extra }) {
   );
 }
 
-function ScoreChart({ scores }) {
+function ScoreChart({ scores, title }) {
   const data = scores.filter((row) => row.value !== null).map((row) => ({
     label: row.name.length > 8 ? `${row.name.slice(0, 8)}…` : row.name,
     full: `${row.name}${row.date ? `｜${fmtDate(row.date, false)}` : ""}`,
@@ -62,7 +62,7 @@ function ScoreChart({ scores }) {
   if (data.length < 2) return null;
   const showAvg = data.some((row) => row.班平均 !== null);
   return (
-    <div className="sc-chart">
+    <div className="sc-chart">{title && <div className="sc-chart-title">{title}</div>}
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
           <CartesianGrid stroke="#ECE6DA" vertical={false} />
@@ -94,7 +94,7 @@ function ScoreTable({ scores, allClasses }) {
 function ScoreSections({ scores, allClasses }) {
   const groups = allClasses.map((cls) => ({ cls, quiz: scores.filter((row) => row.classId === cls.id && row.type === "quiz"), exam: scores.filter((row) => row.classId === cls.id && row.type === "exam") })).filter((group) => group.quiz.length || group.exam.length);
   if (!groups.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
-  return <div className="sc-score-groups">{groups.map(({ cls, quiz, exam }) => <section className="sc-score-group" key={cls.id}><h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>平時考</strong><span>{quiz.length} 筆</span></div><ScoreTable scores={quiz} allClasses={allClasses} /></div><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>段考</strong><span>{exam.length} 筆</span></div><ScoreTable scores={exam} allClasses={allClasses} /></div></section>)}</div>;
+  return <div className="sc-score-groups">{groups.map(({ cls, quiz, exam }) => <section className="sc-score-group" key={cls.id}><h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>平時考</strong><span>{quiz.length} 筆</span></div>{quiz.length >= 2 && <ScoreChart scores={quiz} title="平時考成績變化" />}<ScoreTable scores={quiz} allClasses={allClasses} /></div><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>段考</strong><span>{exam.length} 筆</span></div>{exam.length >= 2 && <ScoreChart scores={exam} title="段考成績變化" />}<ScoreTable scores={exam} allClasses={allClasses} /></div></section>)}</div>;
 }
 
 export default function StudentCard({ snapshot, footer = null, headerActions = null }) {
@@ -141,7 +141,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
       </div>
 
       <Section title="考試成績" hint="已依班級分開；每個班級內再分為平時考與段考。">
-        {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <><ScoreChart scores={card.scores} /><ScoreSections scores={card.scores} allClasses={allClasses} /></>}
+        {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <ScoreSections scores={card.scores} allClasses={allClasses} />}
       </Section>
       <Section title="補課影片" hint={card.makeup.length ? "請假或曠課那一堂的上課影片，可以點開補看。" : ""}>
         {card.makeup.length === 0 ? <p className="sc-muted">沒有缺課紀錄，不需要補課。</p> : (
@@ -220,7 +220,7 @@ export const CARD_CSS = `
 .sc-table .num{text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',ui-monospace,monospace}
 .sc-cell-main{font-weight:700;min-width:6em}.sc-cell-sub{font-size:12px;color:var(--sc-soft);margin-top:2px}.sc-nowrap{white-space:nowrap}
 .sc-score{font-weight:700;font-size:15px}
-.sc-score-groups{display:grid;gap:14px;margin-top:12px}.sc-score-group{border:1px solid var(--sc-line);border-radius:12px;padding:13px;background:var(--sc-paper)}.sc-score-group h4{margin:0 0 10px;font-size:16px}.sc-score-kind{background:var(--sc-card);border-radius:10px;padding:10px;margin-top:9px}.sc-score-kind-head{display:flex;justify-content:space-between;align-items:center;color:var(--sc-soft);font-size:12px}.sc-score-kind-head strong{color:var(--sc-ink);font-size:14px}.sc-score-kind .sc-table-wrap{margin-top:4px}
+.sc-score-groups{display:grid;gap:14px;margin-top:12px}.sc-score-group{border:1px solid var(--sc-line);border-radius:12px;padding:13px;background:var(--sc-paper)}.sc-score-group h4{margin:0 0 10px;font-size:16px}.sc-score-kind{background:var(--sc-card);border-radius:10px;padding:10px;margin-top:9px}.sc-score-kind-head{display:flex;justify-content:space-between;align-items:center;color:var(--sc-soft);font-size:12px}.sc-score-kind-head strong{color:var(--sc-ink);font-size:14px}.sc-score-kind .sc-table-wrap{margin-top:4px}.sc-chart-title{font-size:12px;font-weight:800;color:var(--sc-soft);margin:5px 0 -5px}
 .sc-up,.sc-down{font-size:11px;margin-left:6px}.sc-up{color:#3F7D5C}.sc-down{color:#B23A34}
 .sc-list{display:grid;margin-top:8px}
 .sc-row{display:grid;grid-template-columns:150px 1fr auto;gap:12px;padding:11px 0;border-bottom:1px solid #F0EBE1;align-items:start}
