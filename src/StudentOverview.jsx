@@ -149,6 +149,7 @@ export default function StudentOverview() {
   const [classFilter, setClassFilter] = useState("all");
   const [showStopped, setShowStopped] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [parentPreview, setParentPreview] = useState(false);
   const [bulkCodeBusy, setBulkCodeBusy] = useState(false);
   const [bulkCodeMessage, setBulkCodeMessage] = useState("");
 
@@ -240,6 +241,10 @@ export default function StudentOverview() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId]);
 
+  useEffect(() => {
+    setParentPreview(false);
+  }, [selectedId]);
+
   if (records.status === "loading") return <div className="view-pad"><div className="so-loading">正在讀取全部學生…</div><style>{OVERVIEW_CSS}</style></div>;
   if (records.status === "error" && !records.roots) {
     return (
@@ -258,16 +263,18 @@ export default function StudentOverview() {
         <div className="so-detail-bar">
           <button type="button" className="so-back" onClick={() => setSelectedId(null)}>← 回學生總覽</button>
           <div className="so-detail-nav">
+            <button type="button" className={parentPreview ? "so-preview-toggle active" : "so-preview-toggle"} onClick={() => setParentPreview((value) => !value)}>{parentPreview ? "切回教師畫面" : "預覽家長畫面"}</button>
             {selectedIndex >= 0 && <span className="so-count">{selectedIndex + 1} / {visible.length}</span>}
             <button type="button" disabled={!prev} onClick={() => prev && setSelectedId(prev.id)}>上一位</button>
             <button type="button" disabled={!next} onClick={() => next && setSelectedId(next.id)}>下一位</button>
           </div>
         </div>
-        <div className="so-preview-note">這張卡片就是家長和學生登入後看到的畫面。</div>
+        <div className="so-preview-note">{parentPreview ? "目前是家長畫面預覽：補課影片與出缺勤預設顯示近兩個月。" : "目前是教師畫面：可查看完整歷史紀錄與帳戶管理功能。"}</div>
         <StudentCard
           key={selected.id}
           snapshot={selected.snapshot}
-          footer={<AccountPanel studentId={selected.id} studentName={selected.card.student.name} invites={portal.invites} accounts={portal.accounts} portalError={portal.error} onChanged={loadPortal} />}
+          parentMode={parentPreview}
+          footer={parentPreview ? null : <AccountPanel studentId={selected.id} studentName={selected.card.student.name} invites={portal.invites} accounts={portal.accounts} portalError={portal.error} onChanged={loadPortal} />}
         />
         <style>{OVERVIEW_CSS}</style>
       </div>
@@ -354,6 +361,8 @@ const OVERVIEW_CSS = `
 .so-back{border:0;background:none;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;padding:6px 0;font-family:inherit}
 .so-detail-nav{display:flex;align-items:center;gap:6px}
 .so-detail-nav button{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--ink)}
+.so-detail-nav button.so-preview-toggle{border-color:#6177E8;color:#5268D7;background:#EEF0FF;font-weight:700}
+.so-detail-nav button.so-preview-toggle.active{border-color:#41B3A3;color:#237C70;background:#E1F7F2}
 .so-detail-nav button:disabled{opacity:.4;cursor:default}
 .so-count{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-right:4px}
 .so-preview-note{font-size:12.5px;color:var(--ink-soft);margin-bottom:12px}
