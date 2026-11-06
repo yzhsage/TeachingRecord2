@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   ChevronLeft, ChevronRight, Plus, X, ArrowLeft, Archive, ArchiveRestore,
-  Users, ClipboardList, GraduationCap, Wallet, Settings2, CalendarDays,
+  Users, ClipboardList, GraduationCap, Wallet, Settings2, CalendarDays, Video,
   Trash2, Pencil, CircleDot, Clock, BadgeCheck, Check
 } from "lucide-react";
 import {
@@ -958,6 +958,7 @@ export default function App() {
         />
       )}
       {view === "students" && <StudentOverview />}
+      {view === "videos" && <LessonVideosView classes={classes.filter((c) => !c.archived)} studentIndex={studentIndex} />}
       {view === "detail" && selectedClass && (
         <ClassDetail
           cls={selectedClass}
@@ -984,6 +985,69 @@ function Shell({ children }) {
   return <div className="shell">{children}</div>;
 }
 
+function twoCalendarMonthsAgo(date = new Date()) {
+  const value = new Date(date.getFullYear(), date.getMonth() - 2, date.getDate());
+  return toDateStr(value);
+}
+
+function LessonVideosView({ classes, studentIndex }) {
+  const [from, setFrom] = useState(() => twoCalendarMonthsAgo());
+  const [to, setTo] = useState(() => todayStr());
+  const [selectedClass, setSelectedClass] = useState("all");
+  const [datasets, setDatasets] = useState({});
+  const [status, setStatus] = useState("loading");
+  const [saving, setSaving] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    Promise.all(classes.map(async (cls) => [cls.id, await loadKey(`attendance:${cls.id}`, {})]))
+      .then((pairs) => { if (!cancelled) { setDatasets(Object.fromEntries(pairs)); setStatus("ready"); } })
+      .catch(() => { if (!cancelled) setStatus("error"); });
+    return () => { cancelled = true; };
+  }, [classes]);
+
+  const rows = useMemo(() => classes.flatMap((cls) => {
+    if (selectedClass !== "all" && cls.id !== selectedClass) return [];
+    const data = datasets[cls.id] || {};
+    return Object.entries(data).filter(([date, day]) => date >= from && date <= to && day?.records && Object.values(day.records).some((value) => normalizeAttendanceStatus(value).some((item) => item === "請假" || item === "曠課"))).map(([date, day]) => {
+      const absent = Object.entries(day.records || {}).filter(([, value]) => normalizeAttendanceStatus(value).some((item) => item === "請假" || item === "曠課"));
+      return { cls, date, day, absent, key: `${cls.id}|${date}` };
+    });
+  }).sort((a, b) => b.date.localeCompare(a.date) || a.cls.name.localeCompare(b.cls.name, "zh-Hant")), [classes, datasets, selectedClass, from, to]);
+
+  async function saveVideo(row, value) {
+    const next = { ...(datasets[row.cls.id] || {}) };
+    const day = { note: "", content: "", records: {}, ...(next[row.date] || {}) };
+    next[row.date] = { ...day, videoUrl: value.trim() };
+    setSaving(row.key); setMessage("");
+    try {
+      const ok = await saveKey(`attendance:${row.cls.id}`, next);
+      if (!ok) throw new Error("save failed");
+      setDatasets((current) => ({ ...current, [row.cls.id]: next }));
+      setMessage("影片連結已儲存；這筆紀錄仍會保留，方便日後修改。");
+    } catch { setMessage("影片連結儲存失敗，請確認網路後再試。"); }
+    finally { setSaving(""); }
+  }
+
+  return <div className="view-pad lesson-videos-view">
+    <div className="section-head"><div><h2 className="page-title">上課影片</h2><div className="section-hint">列出指定期間內有請假或曠課的班級紀錄；影片連結沿用原上課日的「當日錄影連結」。</div></div><span className="tag tag-muted">共 {rows.length} 班日紀錄</span></div>
+    <div className="lesson-videos-toolbar"><label>開始日期<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>結束日期<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label>班級<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="all">全部班級</option>{classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label></div>
+    {message && <div className="backup-warning lesson-videos-message">{message}</div>}
+    {status === "loading" && <div className="empty-note">正在讀取缺課紀錄…</div>}
+    {status === "error" && <div className="load-error-banner">讀取上課影片清單失敗，請重新整理頁面後再試。</div>}
+    {status === "ready" && !rows.length && <div className="empty-note">這段期間沒有請假或曠課紀錄。</div>}
+    {status === "ready" && rows.length > 0 && <div className="lesson-video-list">{rows.map((row) => <LessonVideoRow key={row.key} row={row} studentIndex={studentIndex} saving={saving === row.key} onSave={saveVideo} />)}</div>}
+  </div>;
+}
+
+function LessonVideoRow({ row, studentIndex, saving, onSave }) {
+  const [value, setValue] = useState(row.day.videoUrl || "");
+  useEffect(() => setValue(row.day.videoUrl || ""), [row.day.videoUrl]);
+  return <article className="lesson-video-card"><div className="lesson-video-card-head"><div><strong>{formatDisplay(row.date)}</strong><span>{row.cls.name}</span></div><span className={value ? "tag tag-good" : "tag tag-warn"}>{value ? "已填影片" : "尚未填寫"}</span></div><div className="lesson-video-students"><span>缺課學生：</span>{row.absent.map(([studentId, raw]) => { const student = row.cls.students.find((item) => item.id === studentId); const display = student ? studentDisplay(student, studentIndex, row.cls) : { name: studentId }; return <span className="lesson-video-student" key={studentId}>{display.name}（{normalizeAttendanceStatus(raw).filter((item) => item === "請假" || item === "曠課").join("、")}）</span>; })}</div><div className="lesson-video-form"><input type="url" value={value} onChange={(e) => setValue(e.target.value)} placeholder="貼上這一天共用的上課影片連結" /><button className="btn-primary btn-sm" disabled={saving} onClick={() => onSave(row, value)}>{saving ? "儲存中…" : "儲存連結"}</button>{value && /^https?:\/\//i.test(value) && <a href={value} target="_blank" rel="noreferrer">開啟影片</a>}</div></article>;
+}
+
 /* ------------------------------------------------------------------ */
 /* Top nav                                                              */
 /* ------------------------------------------------------------------ */
@@ -1007,6 +1071,7 @@ function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
         <button className={"pill nav-pill" + (view === "today" ? " pill-active" : "")} onClick={() => setView("today")}><CalendarDays size={15} />行事曆</button>
         <button className={"pill nav-pill" + (view === "classes" || view === "detail" ? " pill-active" : "")} onClick={() => setView("classes")}><Users size={15} />所有班級</button>
         <button className={"pill nav-pill" + (view === "students" ? " pill-active" : "")} onClick={() => setView("students")}><GraduationCap size={15} />學生總覽</button>
+        <button className={"pill nav-pill" + (view === "videos" ? " pill-active" : "")} onClick={() => setView("videos")}><Video size={15} />上課影片</button>
       </nav>
       <div className="topnav-actions">
         <SaveIndicator status={saveStatus.status} onRetry={saveStatus.retry} />
@@ -3557,5 +3622,7 @@ button:active { transform: scale(.98); }
 .toast { background: var(--ink); box-shadow: var(--shadow-lift); }.backup-warning { background: #FFF1D9; border-color: #F5D39B; }.detail-title { color: var(--ink); }.tab-active { color: var(--blue); border-bottom-color: var(--blue); }
 @media (max-width: 860px) { .topnav { gap: 12px; }.topnav-middle { order: 3; flex-basis: 100%; }.today-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.metric-note { grid-column: span 2; } }
 @media (max-width: 720px) { .view-pad { padding: 18px 12px 42px; }.today-hero { align-items: flex-start; padding: 23px 20px; }.hero-sticker { width: 86px; height: 86px; }.hero-sticker span { font-size: 15px; }.hero-copy p { font-size: 13px; }.calendar-shell { padding: 12px; }.calendar-header { align-items: flex-start; flex-direction: column; }.calendar-header-actions { width: 100%; flex-wrap: wrap; }.week-grid { overflow-x: auto; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding-bottom: 6px; }.week-column { min-height: 260px; }.today-metrics { gap: 8px; }.metric-card { min-height: 92px; padding: 13px; }.metric-card strong { font-size: 26px; } }
+.lesson-videos-view{max-width:1120px}.lesson-videos-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.lesson-videos-toolbar label{display:grid;gap:5px;color:var(--ink-soft);font-size:12px;font-weight:700}.lesson-videos-toolbar input,.lesson-videos-toolbar select{min-height:36px;border:1px solid var(--line);border-radius:9px;background:#FFF;color:var(--ink);padding:7px 10px;font:inherit;font-size:13px}.lesson-video-list{display:grid;gap:12px}.lesson-video-card{background:#FFF;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-soft)}.lesson-video-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.lesson-video-card-head strong{display:block;color:var(--ink);font:700 16px 'IBM Plex Mono',monospace}.lesson-video-card-head span:not(.tag){display:block;color:var(--ink-soft);font-size:13px;margin-top:4px}.lesson-video-students{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0;color:var(--ink-soft);font-size:13px}.lesson-video-student{padding:5px 8px;border-radius:8px;background:#FFF1F0;color:#B34C47;font-weight:700}.lesson-video-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lesson-video-form input{flex:1 1 360px;min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px}.lesson-video-form a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}.lesson-videos-message{margin:10px 0}
+@media (max-width:720px){.lesson-video-card{padding:13px}.lesson-video-card-head{flex-direction:column}.lesson-video-form input{flex-basis:100%}.lesson-video-form .btn-primary{width:100%}}
 
 `;

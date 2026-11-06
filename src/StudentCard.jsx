@@ -28,6 +28,12 @@ function fmtNum(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function twoCalendarMonthsAgo() {
+  const now = new Date();
+  const value = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
 function StatusChips({ statuses }) {
   return <span className="sc-chips">{statuses.map((status) => <span key={status} className={`sc-status sc-tone-${STATUS_TONE[status] || "muted"}`}>{status}</span>)}</span>;
 }
@@ -97,11 +103,11 @@ function ScoreSections({ scores, allClasses }) {
   return <div className="sc-score-groups">{groups.map(({ cls, quiz, exam }) => <section className="sc-score-group" key={cls.id}><h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>平時考</strong><span>{quiz.length} 筆</span></div>{quiz.length >= 2 && <ScoreChart scores={quiz} title="平時考成績變化" />}<ScoreTable scores={quiz} allClasses={allClasses} /></div><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>段考</strong><span>{exam.length} 筆</span></div>{exam.length >= 2 && <ScoreChart scores={exam} title="段考成績變化" />}<ScoreTable scores={exam} allClasses={allClasses} /></div></section>)}</div>;
 }
 
-export default function StudentCard({ snapshot, footer = null, headerActions = null }) {
+export default function StudentCard({ snapshot, footer = null, headerActions = null, parentMode = false }) {
   const [classId, setClassId] = useState("all");
   const [type, setType] = useState("all");
   const [showAllAttendance, setShowAllAttendance] = useState(false);
-  const [attendanceFrom, setAttendanceFrom] = useState("");
+  const [attendanceFrom, setAttendanceFrom] = useState(() => parentMode ? twoCalendarMonthsAgo() : "");
   const [attendanceTo, setAttendanceTo] = useState("");
   const [attendanceStatus, setAttendanceStatus] = useState("all");
   const [attendanceSort, setAttendanceSort] = useState("date");
@@ -112,6 +118,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
   const { stats } = card;
   const filteredAttendance = card.attendance.filter((row) => (!attendanceFrom || row.date >= attendanceFrom) && (!attendanceTo || row.date <= attendanceTo) && (attendanceStatus === "all" || row.statuses.includes(attendanceStatus))).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
   const attendanceRows = showAllAttendance ? filteredAttendance : filteredAttendance.slice(0, ATTENDANCE_PREVIEW);
+  const makeupRows = parentMode ? card.makeup.filter((row) => row.date >= twoCalendarMonthsAgo()) : card.makeup;
   const school = [...new Set(allClasses.map((cls) => [cls.school, cls.grade].filter(Boolean).join(" · ")).filter(Boolean))][0] || "";
 
   return (
@@ -144,9 +151,9 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
         {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <ScoreSections scores={card.scores} allClasses={allClasses} />}
       </Section>
       <Section title="補課影片" hint={card.makeup.length ? "請假或曠課那一堂的上課影片，可以點開補看。" : ""}>
-        {card.makeup.length === 0 ? <p className="sc-muted">沒有缺課紀錄，不需要補課。</p> : (
+        {makeupRows.length === 0 ? <p className="sc-muted">{parentMode ? "近兩個月沒有缺課紀錄，不需要補課。" : "沒有缺課紀錄，不需要補課。"}</p> : (
           <div className="sc-list">
-            {card.makeup.map((row) => {
+            {makeupRows.map((row) => {
               const url = safeVideoUrl(row.videoUrl);
               return (
                 <div className="sc-row" key={row.id}>
@@ -160,7 +167,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
         )}
       </Section>
 
-      <Section title="出缺勤紀錄" hint={card.attendance.length ? `原始紀錄 ${card.attendance.length} 筆；可依日期、班級與狀態篩選。` : ""}>
+      <Section title="出缺勤紀錄" hint={card.attendance.length ? `${parentMode ? "預設顯示近兩個月；" : ""}原始紀錄 ${card.attendance.length} 筆；可依日期、班級與狀態篩選。` : ""}>
         <div className="sc-attendance-filters"><label>開始日期<input type="date" value={attendanceFrom} onChange={(e) => { setAttendanceFrom(e.target.value); setShowAllAttendance(false); }} /></label><label>結束日期<input type="date" value={attendanceTo} onChange={(e) => { setAttendanceTo(e.target.value); setShowAllAttendance(false); }} /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="all">全部狀態</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
         {filteredAttendance.length === 0 ? <p className="sc-muted">目前篩選條件沒有出缺勤紀錄。</p> : (
           <>

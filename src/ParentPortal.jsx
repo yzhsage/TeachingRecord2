@@ -141,7 +141,7 @@ export default function ParentPortal({ user }) {
         </nav>
       )}
       <main className="portal-main">
-        {active.data ? <StudentCard key={activeId} snapshot={active.data} /> : (
+        {active.data ? <StudentCard key={activeId} snapshot={active.data} parentMode /> : (
           <div className="portal-box">
             {active.error === "denied" && <><h1>這位學生的紀錄目前無法查看</h1><p>認證碼可能已被老師停用，或需要重新輸入一次。如果有新的認證碼，請按下方按鈕輸入。</p><button className="portal-primary" onClick={() => setAdding(true)}>輸入認證碼</button></>}
             {active.error === "missing" && <><h1>學習紀錄準備中</h1><p>老師那邊還沒有產生這位學生的紀錄，通常老師下次開啟系統後就會出現，請稍後再回來看看。</p><button className="portal-primary" onClick={() => load(activeId)}>重新整理</button></>}
