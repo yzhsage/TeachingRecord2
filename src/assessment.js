@@ -1,14 +1,14 @@
 export const SCORE_BANDS = [
   { key: "excellent", label: "90–100", min: 90, max: 100, color: "#3F7D5C" },
-  { key: "good", label: "80–89", min: 80, max: 89.999, color: "#4C6C99" },
-  { key: "fair", label: "70–79", min: 70, max: 79.999, color: "#B8863B" },
-  { key: "pass", label: "60–69", min: 60, max: 69.999, color: "#8C6D3F" },
-  { key: "below", label: "未達 60", min: -Infinity, max: 59.999, color: "#B23A34" },
+  { key: "good", label: "80–89", min: 80, max: 90, color: "#4C6C99" },
+  { key: "fair", label: "70–79", min: 70, max: 80, color: "#B8863B" },
+  { key: "pass", label: "60–69", min: 60, max: 70, color: "#8C6D3F" },
+  { key: "below", label: "未達 60", min: -Infinity, max: 60, color: "#B23A34" },
 ];
 
 export function numericScore(value) {
-  if (value === undefined || value === null || value === "") return null;
-  const number = Number(value);
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const number = Number(String(value).trim());
   return Number.isFinite(number) ? number : null;
 }
 
@@ -34,7 +34,7 @@ export function buildScoreDistribution(values) {
   const scores = values.map(numericScore).filter((value) => value !== null);
   const total = scores.length;
   return SCORE_BANDS.map((band) => {
-    const count = scores.filter((score) => score >= band.min && score <= band.max).length;
+    const count = scores.filter((score) => score >= band.min && (band.max === 100 ? score <= band.max : score < band.max)).length;
     return { ...band, count, percent: total ? Math.round((count / total) * 1000) / 10 : 0 };
   });
 }

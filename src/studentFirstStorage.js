@@ -105,9 +105,9 @@ function attendanceForClass(value, journalValue, classId) {
   return output;
 }
 
-function assessmentForClass(value, classId, type) {
+function assessmentForClass(value, classId, type, storedColumns = {}) {
   const rows = Object.values(value || {}).filter((record) => record.classId === classId && record.type === type);
-  const byId = new Map();
+  const byId = new Map(Object.values(storedColumns || {}).filter((row) => row?.classId === classId && row?.type === type).map((row) => [row.assessmentId, { id: row.assessmentId, name: row.name || "", date: row.date || "", range: row.range || "", segment: row.segment || "" }]));
   for (const row of rows) {
     if (!byId.has(row.assessmentId)) byId.set(row.assessmentId, { id: row.assessmentId, name: row.name || "", date: row.date || "", range: row.range || "" });
   }
@@ -188,9 +188,11 @@ export async function loadStudentFirstKey(key, fallback) {
     const [attendance, journal] = await Promise.all([readRoot("attendance"), readRoot("attendanceJournal")]);
     value = attendanceForClass(attendance, journal, classId);
   } else if (key.startsWith("quiz:")) {
-    value = assessmentForClass(await readRoot("assessments"), key.slice("quiz:".length), "quiz");
+    const [assessments, columns] = await Promise.all([readRoot("assessments"), readRoot("assessmentColumns")]);
+    value = assessmentForClass(assessments, key.slice("quiz:".length), "quiz", columns);
   } else if (key.startsWith("exam:")) {
-    value = assessmentForClass(await readRoot("assessments"), key.slice("exam:".length), "exam");
+    const [assessments, columns] = await Promise.all([readRoot("assessments"), readRoot("assessmentColumns")]);
+    value = assessmentForClass(assessments, key.slice("exam:".length), "exam", columns);
   } else if (key.startsWith("fee:")) {
     value = feesForClass(await readRoot("fees"), key.slice("fee:".length));
   }
@@ -235,6 +237,11 @@ async function saveAssessments(classId, value, type) {
     }
   }
   await patchRoot("assessments", (all) => diffRows(all, next, (record) => record?.classId === classId && record?.type === type));
+  const nextColumns = Object.fromEntries((value?.columns || []).filter((column) => column?.id).map((column) => {
+    const id = `col_${type}_${classId}_${column.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    return [id, { id, classId, type, assessmentId: column.id, name: column.name || "", date: column.date || "", range: column.range || "", segment: column.segment || "" }];
+  }));
+  await patchRoot("assessmentColumns", (all) => diffRows(all, nextColumns, (record) => record?.classId === classId && record?.type === type));
 }
 
 async function saveFees(classId, value) {
@@ -248,6 +255,12 @@ async function saveFees(classId, value) {
 
 function changedStudents(current, students) {
   const patch = {};
+  // update() does not remove children that are absent from the new object.
+  // Explicitly send null for deleted/orphaned student profiles; otherwise a
+  // permanently deleted student remains under /students forever.
+  for (const id of Object.keys(current || {})) {
+    if (!(id in students)) patch[id] = null;
+  }
   for (const [id, student] of Object.entries(students)) if (!same(current[id], student)) patch[id] = student;
   return patch;
 }
@@ -305,6 +318,27 @@ async function saveStudentsFromClasses(value) {
   });
 }
 
+/** Remove stale student-first profiles left by older delete code. This does
+    not touch attendance, scores, or fees; it only removes a /students child
+    when none of its enrollments still points to a roster entry. */
+export async function cleanupOrphanStudentProfiles(value) {
+  const classList = Array.isArray(value) ? value : [];
+  if (!classList.length) return;
+  await patchRoot("students", (current) => {
+    const students = studentMap(clone(current));
+    for (const [studentId, student] of Object.entries(students)) {
+      const validEnrollments = {};
+      for (const [enrollmentId, enrollment] of entries(student.enrollments)) {
+        const cls = classList.find((item) => item?.id === enrollment.classId);
+        if (cls?.students?.some((roster) => roster?.id === studentId)) validEnrollments[enrollmentId] = enrollment;
+      }
+      if (!Object.keys(validEnrollments).length) delete students[studentId];
+      else if (Object.keys(validEnrollments).length !== Object.keys(student.enrollments || {}).length) students[studentId] = { ...student, enrollments: validEnrollments };
+    }
+    return changedStudents(current, students);
+  });
+}
+
 /* Other modules (the family-view updater) listen for finished saves. */
 const savedListeners = new Set();
 export function onStudentFirstSaved(listener) {
@@ -350,7 +384,7 @@ export async function saveStudentFirstKey(key, value) {
   return true;
 }
 
-const RECORD_ROOTS = ["students", "classes", "attendance", "attendanceJournal", "assessments"];
+const RECORD_ROOTS = ["students", "classes", "attendance", "attendanceJournal", "assessments", "assessmentColumns"];
 
 /** The raw lists the student cards are built from. Uses the same local copy
     the save code keeps up to date, so just-saved edits show immediately. */

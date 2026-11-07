@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
@@ -145,6 +145,7 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
 export default function StudentOverview() {
   const [records, setRecords] = useState({ status: "loading", roots: null, error: "" });
   const [portal, setPortal] = useState({ accounts: {}, invites: {}, error: "" });
+  const [portalLoaded, setPortalLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [showStopped, setShowStopped] = useState(false);
@@ -161,6 +162,7 @@ export default function StudentOverview() {
       invites: invites.status === "fulfilled" ? invites.value || {} : {},
       error: failed ? friendly(failed.reason) : "",
     });
+    setPortalLoaded(true);
   }
 
   async function load(fresh = false) {
@@ -175,18 +177,18 @@ export default function StudentOverview() {
     loadPortal();
   }
 
-  async function createMissingInvites() {
+  async function createMissingInvites(silent = false) {
     if (portal.error) {
       setBulkCodeMessage(`目前無法讀取認證碼清單：${portal.error}`);
       return;
     }
-    const existingStudentIds = new Set(Object.values(portal.invites || {}).filter((invite) => invite?.studentId && invite.revoked !== true).map((invite) => invite.studentId));
+    const existingStudentIds = new Set(Object.values(portal.invites || {}).filter((invite) => invite?.studentId && invite.revoked !== true && !invite.claimedBy).map((invite) => invite.studentId));
     const pending = rows.filter((row) => !existingStudentIds.has(row.id));
     if (!pending.length) {
-      setBulkCodeMessage("目前每位學生都已有可用的認證碼。");
+      if (!silent) setBulkCodeMessage("目前每位學生都已有可用的認證碼。");
       return;
     }
-    setBulkCodeBusy(true); setBulkCodeMessage(`正在為 ${pending.length} 位學生產生認證碼…`);
+    setBulkCodeBusy(true); if (!silent) setBulkCodeMessage(`正在為 ${pending.length} 位學生產生認證碼…`);
     try {
       const used = new Set(Object.keys(portal.invites || {}));
       const writes = pending.map((row) => {
@@ -196,7 +198,7 @@ export default function StudentOverview() {
         return set(ref(db, `portalInvites/${code}`), { code, studentId: row.id, role: "parent", createdAt: new Date().toISOString(), revoked: false });
       });
       await Promise.all(writes);
-      setBulkCodeMessage(`已自動建立 ${pending.length} 位學生的 8 碼認證碼。`);
+      if (!silent) setBulkCodeMessage(`已自動建立 ${pending.length} 位學生的 8 碼認證碼。`);
       await loadPortal();
     } catch (error) {
       setBulkCodeMessage(`自動建立失敗：${friendly(error)}`);
@@ -236,6 +238,14 @@ export default function StudentOverview() {
 
   const selectedIndex = visible.findIndex((row) => row.id === selectedId);
   const selected = rows.find((row) => row.id === selectedId) || null;
+
+  const autoCodeRun = useRef("");
+  const studentSignature = rows.map((row) => row.id).sort().join(",");
+  useEffect(() => {
+    if (records.status !== "ready" || !portalLoaded || portal.error || !studentSignature || autoCodeRun.current === studentSignature) return;
+    autoCodeRun.current = studentSignature;
+    createMissingInvites(true);
+  }, [records.status, portalLoaded, portal.error, studentSignature, portal.invites]);
 
   useEffect(() => {
     if (!selectedId) return undefined;
