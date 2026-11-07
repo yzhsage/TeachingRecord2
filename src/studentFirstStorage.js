@@ -255,7 +255,23 @@ function changedStudents(current, students) {
 async function saveStudentsFromClasses(value) {
   await patchRoot("students", (current) => {
     const students = studentMap(clone(current));
-    for (const cls of value || []) {
+    const classList = Array.isArray(value) ? value : [];
+    const classIds = new Set(classList.map((cls) => cls?.id).filter(Boolean));
+
+    // classIndex is authoritative for active class membership. If a student
+    // was removed from a roster, or the class itself was deleted, remove only
+    // that enrollment. A student who still belongs to another class remains.
+    for (const [studentId, student] of Object.entries(students)) {
+      const enrollments = { ...(student.enrollments || {}) };
+      for (const [enrollmentId, enrollment] of Object.entries(enrollments)) {
+        const cls = classList.find((item) => item?.id === enrollment.classId);
+        const stillInRoster = cls?.students?.some((roster) => roster?.id === studentId);
+        if (!classIds.has(enrollment.classId) || !stillInRoster) delete enrollments[enrollmentId];
+      }
+      if (Object.keys(enrollments).length === 0) delete students[studentId];
+      else students[studentId] = { ...student, enrollments };
+    }
+    for (const cls of classList) {
       for (const roster of cls.students || []) {
         if (!roster?.id) continue;
         const previous = students[roster.id] || { id: roster.id, displayName: roster.name || "", aliases: [], enrollments: {}, sourceRefs: [] };

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
-import { invalidateRecordRoots, loadRecordRoots } from "./studentFirstStorage";
+import { invalidateRecordRoots, loadRecordRoots, onStudentFirstSaved } from "./studentFirstStorage";
 import { schedulePortalPublish, subscribePublishStatus } from "./portalPublish";
 import { accountStudentIds, buildAllPortalData, buildStudentCard, isStudentStopped } from "./studentRecords.js";
 import StudentCard from "./StudentCard.jsx";
@@ -204,6 +204,10 @@ export default function StudentOverview() {
   }
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => onStudentFirstSaved((key) => {
+    if (key === "classIndex" || key === "studentIndex") load(true);
+  }), []);
 
   const snapshots = useMemo(() => (records.roots ? buildAllPortalData(records.roots) : {}), [records.roots]);
   const classOptions = useMemo(() => Object.values(records.roots?.classes || {})
