@@ -109,7 +109,8 @@ function buildOne(studentId, student, context, now) {
   const classes = {};
   for (const item of Object.values(enrollments)) {
     const cls = isObject(context.classes[item.classId]) ? context.classes[item.classId] : {};
-    classes[item.classId] = { id: item.classId, name: text(cls.name) || item.className || "班級", subject: text(cls.subject) || item.subject, grade: text(cls.grade) || item.grade };
+    const subjects = (Array.isArray(cls.subjects) ? cls.subjects : []).map(text).filter(Boolean);
+    classes[item.classId] = { id: item.classId, name: text(cls.name) || item.className || "班級", subject: text(cls.subject) || item.subject, grade: text(cls.grade) || item.grade, ...(subjects.length ? { subjects } : {}) };
   }
 
   const attendance = {};
@@ -143,6 +144,7 @@ function buildOne(studentId, student, context, now) {
       name: text(row.name),
       date: text(row.date),
       range: text(row.range),
+      ...(text(row.subject) ? { subject: text(row.subject) } : {}),
       score: cell.raw,
       rank: cell.rank || text(row.rank),
       ...(average && average.count >= MIN_CLASS_AVG_COUNT ? { classAvg: average.avg, classCount: average.count } : {}),
@@ -223,6 +225,27 @@ export function diffPortalData(existing, next) {
   return patch;
 }
 
+/** Subjects of the scores shown, in the teacher's order for that class (the
+    class's 分科目 list), then any others, then scores with no subject last. */
+export function orderSubjects(scores, classes = []) {
+  const seen = [...new Set(scores.map((row) => row.subject).filter(Boolean))];
+  const teacherOrder = [];
+  for (const cls of classes) for (const subject of cls?.subjects || []) if (!teacherOrder.includes(subject)) teacherOrder.push(subject);
+  const rank = (subject) => { const i = teacherOrder.indexOf(subject); return i === -1 ? teacherOrder.length : i; };
+  return seen.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+/** Average per subject. Empty when the scores belong to a single subject (or
+    none), because then the overall average already is that subject's. */
+function scoreSubjectAverages(numeric, classMap) {
+  const subjects = orderSubjects(numeric, [...classMap.values()]);
+  const groups = subjects.map((subject) => ({ subject, rows: numeric.filter((row) => row.subject === subject) }));
+  const untagged = numeric.filter((row) => !row.subject);
+  if (untagged.length && subjects.length) groups.push({ subject: "", rows: untagged });
+  if (groups.length < 2) return [];
+  return groups.map(({ subject, rows }) => ({ subject, count: rows.length, average: round1(rows.reduce((sum, row) => sum + row.value, 0) / rows.length) }));
+}
+
 /** Everything the card shows, optionally for one class only. */
 export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {}) {
   if (!isObject(snapshot?.student)) return null;
@@ -234,6 +257,7 @@ export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {
       id: item.classId,
       name: cls.name || item.className || "班級",
       subject: cls.subject || item.subject || "",
+      subjects: Array.isArray(cls.subjects) ? cls.subjects : [],
       school: item.school || "",
       group: item.group || "",
       grade: item.grade || cls.grade || "",
@@ -280,6 +304,7 @@ export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {
         date: row.date || "",
         sortDate: row.date || dateFromGenId(row.assessmentId),
         range: row.range || "",
+        subject: row.subject || "",
         raw: cell.raw,
         value: cell.value,
         rank: text(row.rank) || cell.rank,
@@ -292,6 +317,7 @@ export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {
   const scores = type === "all" ? allScores : allScores.filter((row) => row.type === type);
   const numeric = scores.filter((row) => row.value !== null);
   const latest = numeric.at(-1) || null;
+  const subjectAverages = scoreSubjectAverages(numeric, classMap);
 
   return {
     student: { id: snapshot.student.id, name: snapshot.student.displayName || "學生" },
@@ -312,6 +338,7 @@ export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {
       scoreCount: numeric.length,
       scoreAverage: numeric.length ? round1(numeric.reduce((sum, row) => sum + row.value, 0) / numeric.length) : null,
       scoreBest: numeric.length ? Math.max(...numeric.map((row) => row.value)) : null,
+      subjectAverages,
       latestScore: latest ? { name: latest.name, value: latest.value, classAvg: latest.classAvg } : null,
       lastAttendance: attendance[0] || null,
     },

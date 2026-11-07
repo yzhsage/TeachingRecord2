@@ -2,6 +2,7 @@ import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
 import { applyClassList, classesPatch, membershipOf, toClassesRoot } from "./classSync.js";
+import { assessmentForClass, assessmentRowsFor } from "./assessmentRows.js";
 
 const cache = new Map();
 const text = (value) => String(value ?? "").trim();
@@ -104,20 +105,6 @@ function attendanceForClass(value, journalValue, classId) {
     output[record.date] = day;
   }
   return output;
-}
-
-function assessmentForClass(value, classId, type, storedColumns = {}) {
-  const rows = Object.values(value || {}).filter((record) => record.classId === classId && record.type === type);
-  const byId = new Map(Object.values(storedColumns || {}).filter((row) => row?.classId === classId && row?.type === type).map((row) => [row.assessmentId, { id: row.assessmentId, name: row.name || "", date: row.date || "", range: row.range || "", segment: row.segment || "" }]));
-  for (const row of rows) {
-    if (!byId.has(row.assessmentId)) byId.set(row.assessmentId, { id: row.assessmentId, name: row.name || "", date: row.date || "", range: row.range || "" });
-  }
-  const scores = {};
-  for (const row of rows) {
-    scores[row.assessmentId] ||= {};
-    scores[row.assessmentId][row.studentId] = isObject(row.score) ? row.score : { score: row.score };
-  }
-  return { columns: [...byId.values()], scores };
 }
 
 function feesForClass(value, classId) {
@@ -247,19 +234,9 @@ async function saveAttendance(classId, value) {
 }
 
 async function saveAssessments(classId, value, type) {
-  const next = {};
-  for (const column of value?.columns || []) {
-    for (const [studentId, score] of entries(value?.scores?.[column.id])) {
-      const id = `asm_${type}_${classId}_${column.id}_${studentId}`.replace(/[^A-Za-z0-9_-]/g, "_");
-      next[id] = { id, studentId, classId, type, assessmentId: column.id, name: column.name || "", date: column.date || "", range: column.range || "", score };
-    }
-  }
-  await patchRoot("assessments", (all) => diffRows(all, next, (record) => record?.classId === classId && record?.type === type));
-  const nextColumns = Object.fromEntries((value?.columns || []).filter((column) => column?.id).map((column) => {
-    const id = `col_${type}_${classId}_${column.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
-    return [id, { id, classId, type, assessmentId: column.id, name: column.name || "", date: column.date || "", range: column.range || "", segment: column.segment || "" }];
-  }));
-  await patchRoot("assessmentColumns", (all) => diffRows(all, nextColumns, (record) => record?.classId === classId && record?.type === type));
+  const { rows, columns } = assessmentRowsFor(classId, value, type);
+  await patchRoot("assessments", (all) => diffRows(all, rows, (record) => record?.classId === classId && record?.type === type));
+  await patchRoot("assessmentColumns", (all) => diffRows(all, columns, (record) => record?.classId === classId && record?.type === type));
 }
 
 async function saveFees(classId, value) {

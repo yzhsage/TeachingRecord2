@@ -70,9 +70,14 @@ export function assessmentCapacity(columns) {
   }, 0);
 }
 
-export function updateAssessmentColumn(column, { name, segment } = {}) {
+export function updateAssessmentColumn(column, { name, segment, subject } = {}) {
   if (!column || !String(name || "").trim()) return column;
   const next = { ...column, name: String(name).trim() };
   if (segment !== undefined) next.segment = String(segment).trim();
+  if (subject !== undefined) {
+    // "" means 未指定: drop the key instead of storing an empty tag
+    if (String(subject).trim()) next.subject = String(subject).trim();
+    else delete next.subject;
+  }
   return next;
 }

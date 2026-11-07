@@ -2154,6 +2154,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
   const [editingColumnId, setEditingColumnId] = useState(null);
   const [editingColumnName, setEditingColumnName] = useState("");
   const [editingColumnSegment, setEditingColumnSegment] = useState("");
+  const [editingColumnSubject, setEditingColumnSubject] = useState("");
 
   const hasSubjects = (cls.subjects || []).length > 0;
   const groupOptions = STUDENT_GROUPS;
@@ -2178,24 +2179,27 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
       setEditingColumnId(null);
       setEditingColumnName("");
       setEditingColumnSegment("");
+      setEditingColumnSubject("");
     }
   }
   function startEditingColumn(col) {
     setEditingColumnId(col.id);
     setEditingColumnName(col.name || "");
     setEditingColumnSegment(col.segment || "");
+    setEditingColumnSubject(col.subject || "");
   }
   function cancelEditingColumn() {
     setEditingColumnId(null);
     setEditingColumnName("");
     setEditingColumnSegment("");
+    setEditingColumnSubject("");
   }
   function saveColumnName(colId) {
     const nextName = editingColumnName.trim();
     if (!nextName) return;
     setData((prev) => ({
       ...prev,
-      columns: prev.columns.map((col) => (col.id === colId ? updateAssessmentColumn(col, { name: nextName, segment: withSegment ? editingColumnSegment : undefined }) : col)),
+      columns: prev.columns.map((col) => (col.id === colId ? updateAssessmentColumn(col, { name: nextName, segment: withSegment ? editingColumnSegment : undefined, subject: hasSubjects ? editingColumnSubject : undefined }) : col)),
     }));
     cancelEditingColumn();
   }
@@ -2469,6 +2473,12 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                         <div className="assessment-name-editor">
                           <input className="assessment-name-input" value={editingColumnName} onChange={(event) => setEditingColumnName(event.target.value)} onKeyDown={(event) => handleColumnNameKeyDown(event, col.id)} aria-label={`修改${unitLabel}名稱`} autoFocus />
                           {withSegment && <input className="assessment-range-input" value={editingColumnSegment} onChange={(event) => setEditingColumnSegment(event.target.value)} onKeyDown={(event) => handleColumnNameKeyDown(event, col.id)} placeholder="範圍（選填）" aria-label={`修改${unitLabel}範圍`} />}
+                          {hasSubjects && (
+                            <select className="assessment-range-input" value={editingColumnSubject} onChange={(event) => setEditingColumnSubject(event.target.value)} aria-label={`修改${unitLabel}科目`}>
+                              <option value="">（未指定科目）</option>
+                              {cls.subjects.map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+                            </select>
+                          )}
                           <div className="assessment-name-editor-actions">
                             <button className="btn-primary btn-xs" onClick={() => saveColumnName(col.id)} disabled={!editingColumnName.trim()}>儲存</button>
                             <button className="btn-ghost btn-xs" onClick={cancelEditingColumn}>取消</button>
@@ -2478,7 +2488,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                         <div className="matrix-col-head-top">
                           <div className="matrix-col-name">{col.name}</div>
                           <div className="matrix-col-head-actions">
-                            <IconBtn title={`修改${unitLabel}「${col.name}」的名稱${withSegment ? "與範圍" : ""}`} onClick={() => startEditingColumn(col)}><Pencil size={14} /></IconBtn>
+                            <IconBtn title={`修改${unitLabel}「${col.name}」的名稱${withSegment ? "、範圍" : ""}${hasSubjects ? "與科目" : ""}`} onClick={() => startEditingColumn(col)}><Pencil size={14} /></IconBtn>
                             <ConfirmDelete title={`刪除${unitLabel}「${col.name}」`} label="刪除這項？" onConfirm={() => removeColumn(col.id)} />
                           </div>
                         </div>

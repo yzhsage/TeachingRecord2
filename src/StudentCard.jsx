@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { buildStudentCard, safeVideoUrl } from "./studentRecords.js";
+import { buildStudentCard, orderSubjects, safeVideoUrl } from "./studentRecords.js";
 
 /* One student's card. Used by the teacher (學生總覽) and by families after
    they log in, so both always see the same thing. */
@@ -73,7 +73,7 @@ function Section({ title, hint, children, extra }) {
 function ScoreChart({ scores, title }) {
   const data = scores.filter((row) => row.value !== null).map((row) => ({
     label: row.name.length > 8 ? `${row.name.slice(0, 8)}…` : row.name,
-    full: `${row.name}${row.date ? `｜${fmtDate(row.date, false)}` : ""}`,
+    full: `${row.name}${row.subject ? ` · ${row.subject}` : ""}${row.date ? `｜${fmtDate(row.date, false)}` : ""}`,
     分數: row.value,
     班平均: row.classAvg,
   }));
@@ -99,20 +99,69 @@ function ScoreChart({ scores, title }) {
 const ATTENDANCE_PREVIEW = 20;
 
 
-function ScoreTable({ scores, allClasses }) {
+function ScoreTable({ scores, allClasses, showSubject = false }) {
   const rows = [...scores].reverse();
   const hasRank = rows.some((row) => row.rank);
   if (!rows.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
   return <div className="sc-table-wrap"><table className="sc-table"><thead><tr><th>考試</th><th>日期</th>{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead><tbody>{rows.map((row) => {
     const diff = row.value !== null && row.classAvg !== null ? row.value - row.classAvg : null;
-    return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{row.range ? ` · ${row.range}` : ""}</div></td><td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
+    return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{showSubject && row.subject ? <> · <span className="sc-subject-tag">{row.subject}</span></> : ""}{row.range ? ` · ${row.range}` : ""}</div></td><td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
   })}</tbody></table></div>;
+}
+
+const UNTAGGED_LABEL = "未分科";
+
+function averageOf(rows) {
+  const values = rows.map((row) => row.value).filter((value) => value !== null);
+  return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
+}
+
+/* One kind (平時考 or 段考) of one class. In a class that has subjects
+   (例如 物理化學 → 物理、化學) the scores are listed per subject, each with its
+   own chart and average, so physics and chemistry are never drawn as one line. */
+function ScoreKind({ label, chartTitle, rows, cls, allClasses }) {
+  const subjects = orderSubjects(rows, [cls]);
+  const untagged = rows.filter((row) => !row.subject);
+  const split = subjects.length > 1 || (subjects.length === 1 && untagged.length > 0);
+  const groups = split
+    ? [...subjects.map((subject) => ({ key: subject, label: subject, rows: rows.filter((row) => row.subject === subject) })), ...(untagged.length ? [{ key: "", label: UNTAGGED_LABEL, rows: untagged }] : [])]
+    : [];
+  return (
+    <div className="sc-score-kind">
+      <div className="sc-score-kind-head"><strong>{label}</strong><span>{rows.length} 筆</span></div>
+      {split ? groups.map((group) => {
+        const average = averageOf(group.rows);
+        return (
+          <div className="sc-subject-group" key={group.key || "untagged"}>
+            <div className="sc-subject-head"><strong>{group.label}</strong><span>{group.rows.length} 筆{average !== null ? ` · 平均 ${fmtNum(average)}` : ""}</span></div>
+            {group.rows.length >= 2 && <ScoreChart scores={group.rows} title={`${group.label}${chartTitle}`} />}
+            <ScoreTable scores={group.rows} allClasses={allClasses} />
+          </div>
+        );
+      }) : (
+        <>
+          {rows.length >= 2 && <ScoreChart scores={rows} title={`${subjects[0] || ""}${chartTitle}`} />}
+          <ScoreTable scores={rows} allClasses={allClasses} showSubject />
+        </>
+      )}
+    </div>
+  );
 }
 
 function ScoreSections({ scores, allClasses }) {
   const groups = allClasses.map((cls) => ({ cls, quiz: scores.filter((row) => row.classId === cls.id && row.type === "quiz"), exam: scores.filter((row) => row.classId === cls.id && row.type === "exam") })).filter((group) => group.quiz.length || group.exam.length);
   if (!groups.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
-  return <div className="sc-score-groups">{groups.map(({ cls, quiz, exam }) => <section className="sc-score-group" key={cls.id}><h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>平時考</strong><span>{quiz.length} 筆</span></div>{quiz.length >= 2 && <ScoreChart scores={quiz} title="平時考成績變化" />}<ScoreTable scores={quiz} allClasses={allClasses} /></div><div className="sc-score-kind"><div className="sc-score-kind-head"><strong>段考</strong><span>{exam.length} 筆</span></div>{exam.length >= 2 && <ScoreChart scores={exam} title="段考成績變化" />}<ScoreTable scores={exam} allClasses={allClasses} /></div></section>)}</div>;
+  return (
+    <div className="sc-score-groups">
+      {groups.map(({ cls, quiz, exam }) => (
+        <section className="sc-score-group" key={cls.id}>
+          <h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4>
+          <ScoreKind label="平時考" chartTitle="平時考成績變化" rows={quiz} cls={cls} allClasses={allClasses} />
+          <ScoreKind label="段考" chartTitle="段考成績變化" rows={exam} cls={cls} allClasses={allClasses} />
+        </section>
+      ))}
+    </div>
+  );
 }
 
 export default function StudentCard({ snapshot, footer = null, headerActions = null, parentMode = false }) {
@@ -162,11 +211,11 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
       <div className="sc-stats">
         <Stat label="出席率" value={fmtNum(stats.attendanceRate)} unit="%" detail={stats.counted ? `出席 ${stats.出席} / 應到 ${stats.counted} 堂` : "還沒有出缺勤紀錄"} tone={stats.attendanceRate !== null && stats.attendanceRate < 80 ? "warn" : ""} />
         <Stat label="請假／曠課" value={`${stats.請假}／${stats.曠課}`} detail={stats.遲到 || stats.早退 ? `遲到 ${stats.遲到} · 早退 ${stats.早退}` : "沒有遲到早退"} tone={stats.曠課 ? "bad" : ""} />
-        <Stat label="平均成績" value={fmtNum(stats.scoreAverage)} unit="分" detail={stats.scoreCount ? `共 ${stats.scoreCount} 次 · 最高 ${fmtNum(stats.scoreBest)}` : "還沒有成績"} />
+        <Stat label="平均成績" value={fmtNum(stats.scoreAverage)} unit="分" detail={stats.scoreCount ? (stats.subjectAverages?.length ? stats.subjectAverages.map((item) => `${item.subject || UNTAGGED_LABEL} ${fmtNum(item.average)}（${item.count} 次）`).join(" · ") : `共 ${stats.scoreCount} 次 · 最高 ${fmtNum(stats.scoreBest)}`) : "還沒有成績"} />
         <Stat label="補課影片" value={String(stats.videoCount)} unit="部" detail={stats.absentCount ? (stats.missingVideoCount ? `缺課 ${stats.absentCount} 次，${stats.missingVideoCount} 次還沒有影片` : `缺課 ${stats.absentCount} 次，都有影片`) : "沒有缺課"} />
       </div>
 
-      <Section title="考試成績" hint="已依班級分開；每個班級內再分為平時考與段考。">
+      <Section title="考試成績" hint="已依班級分開；每個班級內再分為平時考與段考，有分科的班級會再依科目分開。">
         {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <ScoreSections scores={card.scores} allClasses={allClasses} />}
       </Section>
       <Section title="補課影片" hint={card.makeup.length ? "請假或曠課那一堂的上課影片，可以點開補看。" : ""}>
@@ -246,7 +295,11 @@ export const CARD_CSS = `
 .sc-table .num{text-align:right;white-space:nowrap;font-family:'IBM Plex Mono',ui-monospace,monospace}
 .sc-cell-main{font-weight:700;min-width:6em}.sc-cell-sub{font-size:12px;color:var(--sc-soft);margin-top:2px}.sc-nowrap{white-space:nowrap}
 .sc-score{font-weight:700;font-size:15px}
-.sc-score-groups{display:grid;gap:14px;margin-top:12px}.sc-score-group{border:1px solid var(--sc-line);border-radius:12px;padding:13px;background:var(--sc-paper)}.sc-score-group h4{margin:0 0 10px;font-size:16px}.sc-score-kind{background:var(--sc-card);border-radius:10px;padding:10px;margin-top:9px}.sc-score-kind-head{display:flex;justify-content:space-between;align-items:center;color:var(--sc-soft);font-size:12px}.sc-score-kind-head strong{color:var(--sc-ink);font-size:14px}.sc-score-kind .sc-table-wrap{margin-top:4px}.sc-chart-title{font-size:12px;font-weight:800;color:var(--sc-soft);margin:5px 0 -5px}
+.sc-score-groups{display:grid;gap:14px;margin-top:12px}.sc-score-group{border:1px solid var(--sc-line);border-radius:12px;padding:13px;background:var(--sc-paper)}.sc-score-group h4{margin:0 0 10px;font-size:16px}.sc-score-kind{background:var(--sc-card);border-radius:10px;padding:10px;margin-top:9px}.sc-score-kind-head{display:flex;justify-content:space-between;align-items:center;color:var(--sc-soft);font-size:12px}.sc-score-kind-head strong{color:var(--sc-ink);font-size:14px}.sc-score-kind .sc-table-wrap{margin-top:4px}
+.sc-subject-group{margin-top:10px;padding-top:9px;border-top:1px dashed var(--sc-line)}
+.sc-subject-head{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--sc-soft);font-size:12px}
+.sc-subject-head strong{color:var(--sc-ink);font-size:14px}
+.sc-subject-tag{display:inline-block;padding:0 7px;border-radius:999px;background:var(--sc-brass-soft);color:var(--sc-ink);font-weight:700}.sc-chart-title{font-size:12px;font-weight:800;color:var(--sc-soft);margin:5px 0 -5px}
 .sc-up,.sc-down{font-size:11px;margin-left:6px}.sc-up{color:#3F7D5C}.sc-down{color:#B23A34}
 .sc-list{display:grid;margin-top:8px}
 .sc-row{display:grid;grid-template-columns:150px 1fr auto;gap:12px;padding:11px 0;border-bottom:1px solid #F0EBE1;align-items:start}

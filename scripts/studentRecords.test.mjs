@@ -7,6 +7,7 @@ import {
   dateFromGenId,
   diffPortalData,
   MIN_CLASS_AVG_COUNT,
+  orderSubjects,
   publishSafetyCheck,
   safeVideoUrl,
 } from "../src/studentRecords.js";
@@ -136,4 +137,52 @@ test("a student who no longer exists is removed from the family copy exactly onc
   assert.deepEqual(diffPortalData(published, { s1: snap }), {});
   // an id that is already null (older runs left these) is not deleted again
   assert.deepEqual(diffPortalData({ s1: snap, s3: null }, { s1: snap }), {});
+});
+
+function subjectRoots() {
+  const row = (id, assessmentId, name, date, subject, value, type = "quiz") => ({ id, studentId: "s1", classId: "c1", type, assessmentId, name, date, ...(subject ? { subject } : {}), score: { score: value } });
+  return {
+    students: { s1: { id: "s1", displayName: "王小明", enrollments: { e1: { classId: "c1", className: "物理化學", status: "active" } } } },
+    classes: { c1: { id: "c1", name: "物理化學", subject: "物理化學", subjects: ["物理", "化學"] } },
+    attendance: {}, attendanceJournal: {},
+    assessments: {
+      a: row("a", "ch", "CH1 小考", "2026-03-02", "化學", 90),
+      b: row("b", "ph", "CH1 小考", "2026-03-03", "物理", 70),
+      c: row("c", "ph2", "CH2 小考", "2026-03-10", "物理", 80),
+      d: row("d", "old", "舊小考", "2026-02-01", "", 60),
+      e: row("e", "mid", "第一次段考", "2026-04-01", "物理", 75, "exam"),
+    },
+  };
+}
+
+test("each score in the family snapshot and on the card says which subject it is", () => {
+  const snapshot = buildAllPortalData(subjectRoots()).s1;
+  assert.equal(snapshot.assessments.a.subject, "化學");
+  assert.equal(snapshot.assessments.d.subject, undefined);
+  assert.deepEqual(snapshot.classes.c1.subjects, ["物理", "化學"]);
+  const card = buildStudentCard(snapshot);
+  assert.deepEqual(card.scores.map((row) => [row.name, row.subject]), [
+    ["舊小考", ""], ["CH1 小考", "化學"], ["CH1 小考", "物理"], ["CH2 小考", "物理"], ["第一次段考", "物理"],
+  ]);
+});
+
+test("the card averages each subject separately, in the teacher's subject order", () => {
+  const card = buildStudentCard(buildAllPortalData(subjectRoots()).s1, { type: "quiz" });
+  assert.deepEqual(card.stats.subjectAverages, [
+    { subject: "物理", count: 2, average: 75 },
+    { subject: "化學", count: 1, average: 90 },
+    { subject: "", count: 1, average: 60 },
+  ]);
+});
+
+test("no per-subject averages when only one subject (or none) is involved", () => {
+  const onlyPhysics = buildStudentCard(buildAllPortalData(subjectRoots()).s1, { type: "exam" });
+  assert.deepEqual(onlyPhysics.stats.subjectAverages, []);
+  const plain = buildStudentCard(buildAllPortalData(roots()).s1);
+  assert.deepEqual(plain.stats.subjectAverages, []);
+});
+
+test("orderSubjects follows the class's own list, then the rest alphabetically", () => {
+  const rows = [{ subject: "化學" }, { subject: "生物" }, { subject: "物理" }, { subject: "" }];
+  assert.deepEqual(orderSubjects(rows, [{ subjects: ["物理", "化學"] }]), ["物理", "化學", "生物"]);
 });
