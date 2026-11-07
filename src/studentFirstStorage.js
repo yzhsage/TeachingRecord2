@@ -1,6 +1,7 @@
 import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
+import { applyClassList, classesPatch, membershipOf, toClassesRoot } from "./classSync.js";
 
 const cache = new Map();
 const text = (value) => String(value ?? "").trim();
@@ -154,7 +155,10 @@ export function diffRows(current, next, belongs) {
 /* Writes only the changed children of a top-level list with update().
    The old version re-wrote the whole list with set(), so two classes saving
    at the same moment could overwrite each other's records. */
-async function patchRoot(path, buildPatch) {
+async function patchRoot(path, buildPatch, { fresh = false } = {}) {
+  // fresh: download the list again first, so a change made on another device
+  // since this tab last read it is not overwritten with an old copy.
+  if (fresh) roots.delete(path);
   const current = await readRoot(path);
   const patch = buildPatch(current);
   if (!Object.keys(patch).length) return;
@@ -171,12 +175,33 @@ async function patchRoot(path, buildPatch) {
   }
 }
 
+/* What THIS tab last read from or wrote to Firebase for the class list.
+   Saving compares against it, so only this tab's own changes are written and
+   things added on another device are never removed (see classSync.js). */
+let classBaseline = null; // { records: { classId: record }, known: { classIds, pairs } }
+
+function setClassBaseline(classList) {
+  classBaseline = { records: toClassesRoot(classList), known: membershipOf(classList) };
+}
+
+async function ensureClassBaseline() {
+  if (classBaseline) return classBaseline;
+  // Nothing was loaded in this session (e.g. a restore before first load):
+  // fall back to what Firebase holds right now.
+  roots.delete("classes");
+  roots.delete("students");
+  const [classes, students] = await Promise.all([readRoot("classes"), readRoot("students")]);
+  setClassBaseline(toClassIndex(classes, students));
+  return classBaseline;
+}
+
 export async function loadStudentFirstKey(key, fallback) {
   if (cache.has(key)) return clone(cache.get(key));
   let value = fallback;
   if (key === "classIndex") {
     const [classes, students] = await Promise.all([readRoot("classes"), readRoot("students")]);
     value = toClassIndex(classes, students);
+    setClassBaseline(value);
   } else if (key === "studentIndex") {
     value = toStudentIndex(await readRoot("students"));
   } else if (key === "calendar:events") {
@@ -198,13 +223,6 @@ export async function loadStudentFirstKey(key, fallback) {
   }
   cache.set(key, clone(value));
   return clone(value);
-}
-
-function toClassesRoot(value) {
-  return Object.fromEntries((Array.isArray(value) ? value : []).filter((item) => item?.id).map((item) => {
-    const { students, ...cls } = item;
-    return [item.id, { ...cls, id: item.id }];
-  }));
 }
 
 async function saveAttendance(classId, value) {
@@ -265,57 +283,13 @@ function changedStudents(current, students) {
   return patch;
 }
 
-async function saveStudentsFromClasses(value) {
+async function saveStudentsFromClasses(value, known) {
+  // fresh: always start from what Firebase holds now, then apply only the
+  // membership changes this tab made (see applyClassList in classSync.js).
   await patchRoot("students", (current) => {
-    const students = studentMap(clone(current));
-    const classList = Array.isArray(value) ? value : [];
-    const classIds = new Set(classList.map((cls) => cls?.id).filter(Boolean));
-
-    // classIndex is authoritative for active class membership. If a student
-    // was removed from a roster, or the class itself was deleted, remove only
-    // that enrollment. A student who still belongs to another class remains.
-    for (const [studentId, student] of Object.entries(students)) {
-      const enrollments = { ...(student.enrollments || {}) };
-      for (const [enrollmentId, enrollment] of Object.entries(enrollments)) {
-        const cls = classList.find((item) => item?.id === enrollment.classId);
-        const stillInRoster = cls?.students?.some((roster) => roster?.id === studentId);
-        if (!classIds.has(enrollment.classId) || !stillInRoster) delete enrollments[enrollmentId];
-      }
-      if (Object.keys(enrollments).length === 0) delete students[studentId];
-      else students[studentId] = { ...student, enrollments };
-    }
-    for (const cls of classList) {
-      for (const roster of cls.students || []) {
-        if (!roster?.id) continue;
-        const previous = students[roster.id] || { id: roster.id, displayName: roster.name || "", aliases: [], enrollments: {}, sourceRefs: [] };
-        const existing = Object.values(previous.enrollments || {}).find((item) => item.classId === cls.id);
-        const enrollmentId = existing?.id || `enr_${roster.id}_${cls.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
-        students[roster.id] = {
-          ...previous,
-          displayName: roster.name || previous.displayName || "",
-          enrollments: {
-            ...(previous.enrollments || {}),
-            [enrollmentId]: {
-              ...(existing || {}),
-              id: enrollmentId,
-              studentId: roster.id,
-              classId: cls.id,
-              className: cls.name || "",
-              subject: cls.subject || "",
-              grade: roster.grade || cls.grade || "",
-              school: roster.school || "",
-              group: roster.group || "",
-              joinDate: roster.joinDate || "",
-              endDate: roster.endDate || "",
-              resumeDate: roster.resumeDate || "",
-              status: roster.membership === "stopped" ? "ended" : "active",
-            },
-          },
-        };
-      }
-    }
+    const students = applyClassList(studentMap(clone(current)), value, known);
     return changedStudents(current, students);
-  });
+  }, { fresh: true });
 }
 
 /** Remove stale student-first profiles left by older delete code. This does
@@ -336,7 +310,7 @@ export async function cleanupOrphanStudentProfiles(value) {
       else if (Object.keys(validEnrollments).length !== Object.keys(student.enrollments || {}).length) students[studentId] = { ...student, enrollments: validEnrollments };
     }
     return changedStudents(current, students);
-  });
+  }, { fresh: true });
 }
 
 /* Other modules (the family-view updater) listen for finished saves. */
@@ -354,10 +328,13 @@ function notifySaved(key) {
 export async function saveStudentFirstKey(key, value) {
   cache.set(key, clone(value));
   if (key === "classIndex") {
+    // Not set(ref(db, "classes"), ...): that overwrote the whole list, so a
+    // tab with an old copy erased classes added on another device.
+    const baseline = await ensureClassBaseline();
     const classesRoot = toClassesRoot(value);
-    await set(ref(db, "classes"), classesRoot);
-    roots.set("classes", classesRoot);
-    await saveStudentsFromClasses(value);
+    await patchRoot("classes", () => classesPatch(baseline.records, classesRoot), { fresh: true });
+    await saveStudentsFromClasses(value, baseline.known);
+    setClassBaseline(value); // only after both steps worked
   } else if (key === "studentIndex") {
     await patchRoot("students", (current) => {
       const students = studentMap(clone(current));
@@ -366,7 +343,7 @@ export async function saveStudentFirstKey(key, value) {
         students[id] = { ...previous, displayName: profile.name || previous.displayName || "", aliases: previous.aliases || [], sourceRefs: profile.sourceRefs || previous.sourceRefs || [] };
       }
       return changedStudents(current, students);
-    });
+    }, { fresh: true });
   } else if (key === "calendar:events") {
     await set(ref(db, "calendarEvents"), value);
   } else if (key === "lastBackupAt") {

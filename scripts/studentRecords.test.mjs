@@ -6,6 +6,7 @@ import {
   buildStudentCard,
   dateFromGenId,
   diffPortalData,
+  MIN_CLASS_AVG_COUNT,
   publishSafetyCheck,
   safeVideoUrl,
 } from "../src/studentRecords.js";
@@ -62,7 +63,8 @@ test("score stats ignore blank scores and include class average and rank", () =>
   assert.equal(card.stats.scoreCount, 3);
   assert.equal(card.stats.scoreAverage, 80);
   assert.equal(card.stats.scoreBest, 90);
-  assert.equal(card.scores.find((row) => row.name === "小考一").classAvg, 70);
+  // c1 has only 2 scored students, below MIN_CLASS_AVG_COUNT: no class average
+  assert.equal(card.scores.find((row) => row.name === "小考一").classAvg, null);
   assert.equal(card.scores.find((row) => row.type === "exam").rank, "5");
 });
 
@@ -103,4 +105,35 @@ test("helpers: account ids, video links, ids made from time", () => {
   const id = Date.UTC(2026, 2, 5, 4).toString(36) + "abc123";
   assert.equal(dateFromGenId(id), "2026-03-05");
   assert.equal(dateFromGenId("exam_1"), "");
+});
+
+test("class average is hidden in small classes, so one family can't work out another student's score", () => {
+  const small = roots();
+  const data = buildAllPortalData(small).s1.assessments;
+  assert.equal(data.q1.classAvg, undefined);
+  assert.equal(data.q1.classCount, undefined);
+  assert.ok(!JSON.stringify(data).includes("classAvg"));
+});
+
+test("class average is shown once enough students have a score", () => {
+  const big = { students: {}, classes: { c1: { id: "c1", name: "大班" } }, attendance: {}, attendanceJournal: {}, assessments: {} };
+  for (let i = 0; i < MIN_CLASS_AVG_COUNT; i += 1) {
+    big.students[`s${i}`] = { displayName: `學生${i}`, enrollments: { e: { classId: "c1", status: "active" } } };
+    big.assessments[`a${i}`] = { id: `a${i}`, studentId: `s${i}`, classId: "c1", type: "quiz", assessmentId: "col", name: "小考", score: { score: 60 + i * 10 } };
+  }
+  const row = buildAllPortalData(big).s0.assessments.a0;
+  assert.equal(row.classAvg, 80);
+  assert.equal(row.classCount, MIN_CLASS_AVG_COUNT);
+});
+
+test("a student who no longer exists is removed from the family copy exactly once", () => {
+  const snap = { student: { id: "x", displayName: "x" } };
+  const published = { s1: snap, s3: snap };
+  const patch = diffPortalData(published, { s1: snap });
+  assert.deepEqual(patch, { s3: null });
+  // what portalPublish does after a successful write
+  for (const [id, value] of Object.entries(patch)) { if (value === null) delete published[id]; else published[id] = value; }
+  assert.deepEqual(diffPortalData(published, { s1: snap }), {});
+  // an id that is already null (older runs left these) is not deleted again
+  assert.deepEqual(diffPortalData({ s1: snap, s3: null }, { s1: snap }), {});
 });

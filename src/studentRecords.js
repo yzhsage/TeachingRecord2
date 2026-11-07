@@ -17,6 +17,10 @@ const round1 = (value) => Math.round(value * 10) / 10;
 
 export const ABSENT_STATUSES = ["請假", "曠課"];
 export const ASSESSMENT_TYPE_LABEL = { quiz: "平時考", exam: "段考" };
+/** A class average is only shown when at least this many students have a
+    score for that test. In a 2-student class the average (with the head count)
+    lets one family work out the other student's score exactly. */
+export const MIN_CLASS_AVG_COUNT = 5;
 export const RECORD_ROOT_NAMES = ["students", "classes", "attendance", "attendanceJournal", "assessments"];
 
 /** A stored score is either a plain value or a cell like { score, rank }. */
@@ -141,7 +145,7 @@ function buildOne(studentId, student, context, now) {
       range: text(row.range),
       score: cell.raw,
       rank: cell.rank || text(row.rank),
-      ...(average ? { classAvg: average.avg, classCount: average.count } : {}),
+      ...(average && average.count >= MIN_CLASS_AVG_COUNT ? { classAvg: average.avg, classCount: average.count } : {}),
     };
   }
 
@@ -172,8 +176,9 @@ export function buildStudentPortalData(studentId, roots, now = new Date().toISOS
   return student ? buildOne(studentId, student, buildContext(roots), now) : null;
 }
 
-/** Never publish when the records look missing: a read that came back empty
-    must not wipe what families can already see. */
+/** Last guard before publishing: an empty student list is never published,
+    because it would remove every family copy. (A read that fails does not get
+    here: readPath() throws after its retries instead of returning nothing.) */
 export function publishSafetyCheck(roots) {
   const count = (value) => (isObject(value) ? Object.keys(value).length : 0);
   if (!count(roots?.students)) return { ok: false, reason: "沒有讀到任何學生資料" };
@@ -203,11 +208,14 @@ export function samePortalData(a, b) {
   return JSON.stringify(canonical(strip(a)) ?? null) === JSON.stringify(canonical(strip(b)) ?? null);
 }
 
-/** Only students whose snapshot changed. Never deletes anyone. */
+/** Only students whose snapshot changed. A student who no longer exists gets
+    `null`, which removes the family copy (families can't read it anyway once
+    the student is gone, and the data should not stay behind). Ids that are
+    already empty in `existing` are not deleted again. */
 export function diffPortalData(existing, next) {
   const patch = {};
-  for (const id of Object.keys(existing || {})) {
-    if (!(id in (next || {}))) patch[id] = null;
+  for (const [id, value] of Object.entries(existing || {})) {
+    if (value != null && !(id in (next || {}))) patch[id] = null;
   }
   for (const [id, snapshot] of Object.entries(next || {})) {
     if (snapshot && !samePortalData(existing?.[id], snapshot)) patch[id] = snapshot;

@@ -78,7 +78,13 @@ async function run() {
     const ids = Object.keys(patch);
     if (ids.length) {
       await withTimeout(update(ref(db, "portalStudentData"), patch), WRITE_TIMEOUT_MS);
-      Object.assign(published, patch);
+      // Keep the local copy equal to Firebase: a removed student must leave
+      // it, not stay as `null` (that made every later publish send the same
+      // delete again).
+      for (const [id, value] of Object.entries(patch)) {
+        if (value === null) delete published[id];
+        else published[id] = value;
+      }
     }
     setStatus({ state: "ok", at: new Date().toISOString(), changed: ids.length, message: "" });
   } catch (error) {
