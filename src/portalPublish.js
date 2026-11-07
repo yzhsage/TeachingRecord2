@@ -8,7 +8,7 @@
 import { ref, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
-import { invalidateRecordRoots, loadRecordRoots, onStudentFirstSaved } from "./studentFirstStorage";
+import { loadRecordRoots, onStudentFirstSaved } from "./studentFirstStorage";
 import { buildAllPortalData, diffPortalData, publishSafetyCheck } from "./studentRecords.js";
 
 const SAVE_DELAY_MS = 5000;
@@ -63,9 +63,6 @@ async function run() {
   running = true;
   setStatus({ state: "publishing", message: "" });
   try {
-    // A second teacher tab may have changed Firebase after this tab's local
-    // root cache was populated. Always fetch fresh roots before publishing.
-    invalidateRecordRoots();
     const roots = await loadRecordRoots();
     const check = publishSafetyCheck(roots);
     if (!check.ok) {

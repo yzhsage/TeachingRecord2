@@ -81,7 +81,7 @@
       ".read": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'",
       "$studentId": {
-        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (root.child('students').child($studentId).exists() && root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).isString() && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('revoked').val() != true))",
+        ".read": "auth != null && (auth.token.email == 'yzhsage@gmail.com' || (root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).isString() && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('claimedBy').val() == auth.uid && root.child('portalInvites').child(root.child('portalAccounts').child(auth.uid).child('studentIds').child($studentId).val()).child('revoked').val() != true))",
         ".write": "auth != null && auth.token.email == 'yzhsage@gmail.com'"
       }
     }

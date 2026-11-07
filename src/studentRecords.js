@@ -177,6 +177,7 @@ export function buildStudentPortalData(studentId, roots, now = new Date().toISOS
 export function publishSafetyCheck(roots) {
   const count = (value) => (isObject(value) ? Object.keys(value).length : 0);
   if (!count(roots?.students)) return { ok: false, reason: "沒有讀到任何學生資料" };
+  if (!count(roots?.attendance) && !count(roots?.assessments)) return { ok: false, reason: "沒有讀到任何出缺勤或成績紀錄" };
   return { ok: true, reason: "" };
 }
 
@@ -206,9 +207,6 @@ export function samePortalData(a, b) {
 /** Only students whose snapshot changed. Never deletes anyone. */
 export function diffPortalData(existing, next) {
   const patch = {};
-  for (const id of Object.keys(existing || {})) {
-    if (!(id in (next || {}))) patch[id] = null;
-  }
   for (const [id, snapshot] of Object.entries(next || {})) {
     if (snapshot && !samePortalData(existing?.[id], snapshot)) patch[id] = snapshot;
   }
@@ -255,7 +253,7 @@ export function buildStudentCard(snapshot, { classId = "all", type = "all" } = {
   }
 
   const makeup = attendance.filter((row) => ABSENT_STATUSES.includes(row.base));
-  const videoCount = makeup.filter((row) => safeVideoUrl(row.videoUrl)).length;
+  const videoCount = makeup.filter((row) => row.videoUrl).length;
 
   const allScores = valuesOf(snapshot.assessments)
     .filter((row) => inScope(row.classId) && hasScore(row))

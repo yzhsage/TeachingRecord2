@@ -90,9 +90,9 @@ test("diff only re-publishes students whose records changed", () => {
   assert.deepEqual(Object.keys(diffPortalData(after, buildAllPortalData(changed))), []);
 });
 
-test("empty reads are never published, but a new student may have empty records", () => {
+test("empty reads are never published", () => {
   assert.equal(publishSafetyCheck({ students: {}, attendance: { a: {} } }).ok, false);
-  assert.equal(publishSafetyCheck({ students: { s: {} }, attendance: {}, assessments: {} }).ok, true);
+  assert.equal(publishSafetyCheck({ students: { s: {} }, attendance: {}, assessments: {} }).ok, false);
   assert.equal(publishSafetyCheck(roots()).ok, true);
 });
 
