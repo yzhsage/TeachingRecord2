@@ -30,7 +30,9 @@ function fmtNum(value) {
 
 function twoCalendarMonthsAgo() {
   const now = new Date();
-  const value = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
+  const targetMonth = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+  const value = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(now.getDate(), lastDay));
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
@@ -125,9 +127,15 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
   const allClasses = useMemo(() => buildStudentCard(snapshot)?.classes || [], [snapshot]);
   const parentCutoff = parentMode ? twoCalendarMonthsAgo() : "";
 
+  React.useEffect(() => {
+    setAttendanceFrom(parentMode ? twoCalendarMonthsAgo() : "");
+    setAttendanceTo("");
+    setShowAllAttendance(false);
+  }, [parentMode, snapshot?.student?.id]);
+
   if (!card) return <div className="sc-root"><div className="sc-empty">找不到這位學生的資料。</div><style>{CARD_CSS}</style></div>;
   const { stats } = card;
-  const filteredAttendance = card.attendance.filter((row) => (!attendanceFrom || inDateRange(row.date, attendanceFrom, attendanceTo)) && (!attendanceStatus || attendanceStatus === "all" || row.statuses.includes(attendanceStatus))).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
+  const filteredAttendance = card.attendance.filter((row) => (!attendanceFrom || row.date >= attendanceFrom) && (!attendanceTo || row.date <= attendanceTo) && (!attendanceStatus || attendanceStatus === "all" || row.statuses.includes(attendanceStatus))).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
   const attendanceRows = showAllAttendance ? filteredAttendance : filteredAttendance.slice(0, ATTENDANCE_PREVIEW);
   const makeupRows = parentMode ? card.makeup.filter((row) => inDateRange(row.date, parentCutoff, todayDateString())) : card.makeup;
   const school = [...new Set(allClasses.map((cls) => [cls.school, cls.grade].filter(Boolean).join(" · ")).filter(Boolean))][0] || "";

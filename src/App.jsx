@@ -10,7 +10,7 @@ import {
 import _ from "lodash";
 import { signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
-import { loadStudentFirstKey, saveStudentFirstKey } from "./studentFirstStorage";
+import { cleanupOrphanStudentProfiles, loadStudentFirstKey, saveStudentFirstKey } from "./studentFirstStorage";
 import StudentOverview from "./StudentOverview.jsx";
 import { startPortalAutoPublish } from "./portalPublish";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
@@ -654,6 +654,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, studentIndexReady, classes]);
 
+  useEffect(() => {
+    if (!ready || !classes.length) return;
+    cleanupOrphanStudentProfiles(classes).catch((error) => console.error("orphan student cleanup failed", error));
+    // This startup pass only repairs orphan profiles left by older releases.
+    // The classIndex save path handles future roster/class deletions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   function updateClass(id, updater) {
     setClasses((prev) => prev.map((c) => (c.id === id ? updater({ ...c }) : c)));
   }
@@ -682,15 +690,19 @@ export default function App() {
       const cleaned = removeStudentFromRecords(studentId, { attendance, quiz, exam, fee });
       const nextStudentIndex = removeStudentFromStudentIndex(studentIndex, studentId, classId);
       const shouldWriteFee = hasFee || (fee?.charges || []).length > 0;
-      await Promise.all([
+      const results = await Promise.all([
         saveKey(`attendance:${classId}`, cleaned.attendance),
         saveKey(`quiz:${classId}`, cleaned.quiz),
         saveKey(`exam:${classId}`, cleaned.exam),
         saveKey("studentIndex", nextStudentIndex),
         ...(shouldWriteFee ? [saveKey(`fee:${classId}`, cleaned.fee)] : []),
       ]);
+      if (results.some((ok) => !ok)) {
+        setToast("永久清除未完成：部分資料儲存失敗，請確認網路或權限後再按一次。資料未宣告為已清除。");
+        return false;
+      }
       setStudentIndex(nextStudentIndex);
-      setToast("已永久清除這位學生在本班的全部紀錄。");
+      setToast("已完成這位學生在本班的永久清除。");
       return true;
     } catch (error) {
       console.error("student purge failed", classId, studentId, error);
@@ -1665,7 +1677,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
       else records[studentId] = value;
       const nextDay = { ...currentDay, records };
       const next = { ...prev };
-      if (!nextDay.note && !nextDay.content && Object.keys(records).length === 0) delete next[dateStr];
+      if (!nextDay.note && !nextDay.content && !nextDay.videoUrl && Object.keys(records).length === 0) delete next[dateStr];
       else next[dateStr] = nextDay;
       return next;
     });

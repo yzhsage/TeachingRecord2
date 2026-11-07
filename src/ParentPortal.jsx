@@ -110,6 +110,11 @@ export default function ParentPortal({ user }) {
 
   useEffect(() => { load(); }, [user.uid]);
 
+  useEffect(() => {
+    const timer = setInterval(() => load(activeId), 30000);
+    return () => clearInterval(timer);
+  }, [user.uid, activeId]);
+
   if (state.status === "loading") return <div className="portal-shell"><div className="portal-loading">載入中…</div><style>{PORTAL_CSS}</style></div>;
   if (state.status === "error") {
     return (
