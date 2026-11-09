@@ -70,10 +70,10 @@ function Section({ title, hint, children, extra }) {
   );
 }
 
-function ScoreChart({ scores, title }) {
+function ScoreChart({ scores, title, showDate = true }) {
   const data = scores.filter((row) => row.value !== null).map((row) => ({
     label: row.name.length > 8 ? `${row.name.slice(0, 8)}…` : row.name,
-    full: `${row.name}${row.subject ? ` · ${row.subject}` : ""}${row.date ? `｜${fmtDate(row.date, false)}` : ""}`,
+    full: `${row.name}${row.subject ? ` · ${row.subject}` : ""}${showDate && row.date ? `｜${fmtDate(row.date, false)}` : ""}`,
     分數: row.value,
     班平均: row.classAvg,
   }));
@@ -99,13 +99,13 @@ function ScoreChart({ scores, title }) {
 const ATTENDANCE_PREVIEW = 20;
 
 
-function ScoreTable({ scores, allClasses, showSubject = false }) {
+function ScoreTable({ scores, allClasses, showSubject = false, showDate = true }) {
   const rows = [...scores].reverse();
   const hasRank = rows.some((row) => row.rank);
   if (!rows.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
-  return <div className="sc-table-wrap"><table className="sc-table"><thead><tr><th>考試</th><th>日期</th>{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead><tbody>{rows.map((row) => {
+  return <div className="sc-table-wrap"><table className="sc-table"><thead><tr><th>考試</th>{showDate && <th>日期</th>}{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead><tbody>{rows.map((row) => {
     const diff = row.value !== null && row.classAvg !== null ? row.value - row.classAvg : null;
-    return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{showSubject && row.subject ? <> · <span className="sc-subject-tag">{row.subject}</span></> : ""}{row.range ? ` · ${row.range}` : ""}</div></td><td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
+    return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{showSubject && row.subject ? <> · <span className="sc-subject-tag">{row.subject}</span></> : ""}{row.range ? ` · ${row.range}` : ""}</div></td>{showDate && <td className="sc-nowrap">{row.date ? fmtDate(row.date, false) : "—"}</td>}{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
   })}</tbody></table></div>;
 }
 
@@ -119,7 +119,7 @@ function averageOf(rows) {
 /* One kind (平時考 or 段考) of one class. In a class that has subjects
    (例如 物理化學 → 物理、化學) the scores are listed per subject, each with its
    own chart and average, so physics and chemistry are never drawn as one line. */
-function ScoreKind({ label, chartTitle, rows, cls, allClasses }) {
+function ScoreKind({ label, chartTitle, rows, cls, allClasses, showDate = true }) {
   const subjects = orderSubjects(rows, [cls]);
   const untagged = rows.filter((row) => !row.subject);
   const split = subjects.length > 1 || (subjects.length === 1 && untagged.length > 0);
@@ -134,14 +134,14 @@ function ScoreKind({ label, chartTitle, rows, cls, allClasses }) {
         return (
           <div className="sc-subject-group" key={group.key || "untagged"}>
             <div className="sc-subject-head"><strong>{group.label}</strong><span>{group.rows.length} 筆{average !== null ? ` · 平均 ${fmtNum(average)}` : ""}</span></div>
-            {group.rows.length >= 2 && <ScoreChart scores={group.rows} title={`${group.label}${chartTitle}`} />}
-            <ScoreTable scores={group.rows} allClasses={allClasses} />
+            {group.rows.length >= 2 && <ScoreChart scores={group.rows} title={`${group.label}${chartTitle}`} showDate={showDate} />}
+            <ScoreTable scores={group.rows} allClasses={allClasses} showDate={showDate} />
           </div>
         );
       }) : (
         <>
-          {rows.length >= 2 && <ScoreChart scores={rows} title={`${subjects[0] || ""}${chartTitle}`} />}
-          <ScoreTable scores={rows} allClasses={allClasses} showSubject />
+          {rows.length >= 2 && <ScoreChart scores={rows} title={`${subjects[0] || ""}${chartTitle}`} showDate={showDate} />}
+          <ScoreTable scores={rows} allClasses={allClasses} showSubject showDate={showDate} />
         </>
       )}
     </div>
@@ -157,7 +157,7 @@ function ScoreSections({ scores, allClasses }) {
         <section className="sc-score-group" key={cls.id}>
           <h4>{cls.name}{cls.school ? ` · ${cls.school}` : ""}</h4>
           <ScoreKind label="平時考" chartTitle="平時考成績變化" rows={quiz} cls={cls} allClasses={allClasses} />
-          <ScoreKind label="段考" chartTitle="段考成績變化" rows={exam} cls={cls} allClasses={allClasses} />
+          <ScoreKind label="段考" chartTitle="段考成績變化" rows={exam} cls={cls} allClasses={allClasses} showDate={false} />
         </section>
       ))}
     </div>
