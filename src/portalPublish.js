@@ -10,6 +10,7 @@ import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
 import { invalidateRecordRoots, loadRecordRoots, onStudentFirstSaved } from "./studentFirstStorage";
 import { buildAllPortalData, diffPortalData, publishSafetyCheck } from "./studentRecords.js";
+import { friendlyError } from "./friendlyError.js";
 
 const SAVE_DELAY_MS = 5000;
 const FIRST_RUN_DELAY_MS = 3000;
@@ -46,11 +47,7 @@ function withTimeout(promise, ms) {
   ]).finally(() => clearTimeout(id));
 }
 
-function friendly(error) {
-  const message = String(error?.message || error || "");
-  if (/permission/i.test(message)) return "沒有寫入權限，請確認 Firebase 規則已更新並發布";
-  return message || "未知錯誤";
-}
+function friendly(error) { return friendlyError(error); }
 
 export function schedulePortalPublish(delay = SAVE_DELAY_MS) {
   if (timer) clearTimeout(timer);

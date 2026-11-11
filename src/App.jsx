@@ -16,28 +16,19 @@ import { startPortalAutoPublish } from "./portalPublish";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
 import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
+import { FONT_IMPORT_CSS, THEME_VARS_CSS, THEME_COMPONENTS_CSS, STATUS_STYLE, CHART_THEME } from "./theme.js";
+import { WEEKDAYS as WEEKDAY_FULL, fmtDate, fmtDateShort, fmtDateRange, fmtTimeRange, ruleWeekLabel, twoCalendarMonthsAgo, weekdayLabel } from "./dateFormat.js";
 import { formatStudentSchoolGroup, isStudentStoppedOnDate, mergeStudentIndex, removeStudentFromRecords, removeStudentFromStudentIndex, studentDisplay, studentStartDate, validateStudentIndex } from "./students";
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
-const WEEKDAY_FULL = ["日", "一", "二", "三", "四", "五", "六"];
 const STATUS_LIST = ATTENDANCE_STATUSES;
-const STATUS_STYLE = {
-  出席: { bg: "#EAF3EC", fg: "#3F7D5C", bd: "#BFDCC9", short: "出" },
-  請假: { bg: "#FBF3DE", fg: "#A87B14", bd: "#EFDBA0", short: "假" },
-  曠課: { bg: "#FBEAE9", fg: "#B23A34", bd: "#F0C6C3", short: "曠" },
-  遲到: { bg: "#E9EFF6", fg: "#3F5E8C", bd: "#C3D3E7", short: "遲" },
-  早退: { bg: "#EFE9F6", fg: "#6A4E9C", bd: "#D8CBEF", short: "早" },
-  延課: { bg: "#EEEEEC", fg: "#71757A", bd: "#D9D9D5", short: "延" },
-  假期: { bg: "#E6F1F3", fg: "#2E7D8C", bd: "#BFE0E5", short: "假期" },
-};
 /* Trial students are promoted to regular membership starting with
    their 3rd recorded session (first 2 are the trial period). */
 const TRIAL_SESSION_COUNT = 2;
 const CLASS_COLORS = ["#B8863B", "#3F7D5C", "#4C6C99", "#7A5EA8", "#B23A34", "#3E8FA8", "#8C6D3F"];
-const CHART_COLORS = ["#B8863B", "#4C6C99", "#7A5EA8", "#3F7D5C", "#B23A34"];
 const STUDENT_GROUPS = ["", "數A", "數B"];
 
 /* ------------------------------------------------------------------ */
@@ -61,10 +52,7 @@ function addDays(dateStr, n) {
 }
 function todayStr() { return toDateStr(new Date()); }
 function weekdayOf(dateStr) { return fromDateStr(dateStr).getDay(); }
-function formatDisplay(dateStr) {
-  const d = fromDateStr(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}（週${WEEKDAY_FULL[d.getDay()]}）`;
-}
+function formatDisplay(dateStr) { return fmtDateShort(dateStr); }
 function genId() { return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`; }
 function parseTimeMinutes(t) {
   if (!t) return Infinity;
@@ -92,10 +80,7 @@ function fmtNum(n) {
 /* Schedule logic                                                       */
 /* ------------------------------------------------------------------ */
 
-function formatTimeRange(startTime, endTime) {
-  if (!startTime) return "";
-  return endTime ? `${startTime}~${endTime}` : startTime;
-}
+function formatTimeRange(startTime, endTime) { return fmtTimeRange(startTime, endTime); }
 function getSessionInfo(cls, dateStr) {
   const overrides = cls.overrides || [];
   const ov = overrides.find((o) => o.date === dateStr);
@@ -165,10 +150,9 @@ function scheduleSummary(cls) {
   if (rules.length === 0) return "尚未設定課表";
   return rules
     .map((r) => {
-      const freq = r.interval === 2 ? "隔週" : "每週";
-      const from = r.effectiveFrom && r.effectiveFrom > todayStr() ? `（自 ${r.effectiveFrom} 起）` : "";
+      const from = r.effectiveFrom && r.effectiveFrom > todayStr() ? `（自 ${fmtDate(r.effectiveFrom, { weekday: false })} 起）` : "";
       const time = formatTimeRange(r.startTime, r.endTime);
-      return `${freq}週${WEEKDAY_FULL[r.dayOfWeek]}${time ? ` ${time}` : ""}${from}`;
+      return `${ruleWeekLabel(r.interval, r.dayOfWeek)}${time ? ` ${time}` : ""}${from}`;
     })
     .join("、");
 }
@@ -180,9 +164,8 @@ function scheduleLines(cls) {
   const rules = (cls.scheduleRules || []).filter((r) => !r.effectiveTo || r.effectiveTo >= todayStr());
   if (rules.length === 0) return [{ day: "尚未設定課表", time: "" }];
   return rules.map((r) => {
-    const freq = r.interval === 2 ? "隔週" : "每週";
-    const from = r.effectiveFrom && r.effectiveFrom > todayStr() ? `（自 ${r.effectiveFrom} 起）` : "";
-    return { day: `${freq}週${WEEKDAY_FULL[r.dayOfWeek]}`, time: `${formatTimeRange(r.startTime, r.endTime)}${from}` };
+    const from = r.effectiveFrom && r.effectiveFrom > todayStr() ? `（自 ${fmtDate(r.effectiveFrom, { weekday: false })} 起）` : "";
+    return { day: ruleWeekLabel(r.interval, r.dayOfWeek), time: `${formatTimeRange(r.startTime, r.endTime)}${from}` };
   });
 }
 /* Days until (and time of) this class's next occurrence from `fromDate`,
@@ -539,7 +522,7 @@ function SaveIndicator({ status, onRetry }) {
 }
 function IconBtn({ onClick, children, title, danger, disabled }) {
   return (
-    <button onClick={disabled ? undefined : onClick} title={title} disabled={disabled} className={"icon-btn" + (danger ? " icon-btn-danger" : "")} type="button">
+    <button onClick={disabled ? undefined : onClick} title={title} aria-label={title} disabled={disabled} className={"icon-btn" + (danger ? " icon-btn-danger" : "")} type="button">
       {children}
     </button>
   );
@@ -580,7 +563,7 @@ function Toast({ message, onClose }) {
   return (
     <div className="toast">
       <span>{message}</span>
-      <button onClick={onClose}><X size={14} /></button>
+      <button onClick={onClose} aria-label="關閉" title="關閉"><X size={14} /></button>
     </div>
   );
 }
@@ -997,11 +980,6 @@ function Shell({ children }) {
   return <div className="shell">{children}</div>;
 }
 
-function twoCalendarMonthsAgo(date = new Date()) {
-  const value = new Date(date.getFullYear(), date.getMonth() - 2, date.getDate());
-  return toDateStr(value);
-}
-
 function LessonVideosView({ classes, studentIndex }) {
   const [from, setFrom] = useState(() => twoCalendarMonthsAgo());
   const [to, setTo] = useState(() => todayStr());
@@ -1170,7 +1148,7 @@ function MonthCalendar({ selected, onSelect, classes, hasSession, calendarEvents
             const isStart = dates[0] === ds;
             const isEnd = dates[dates.length - 1] === ds;
             const meta = eventTypeMeta(event.type);
-            return <span key={event.id} className={"calendar-event-label" + (continuous ? " calendar-event-label-range" : " calendar-event-label-scattered") + (isStart ? " calendar-event-label-start" : "") + (isEnd ? " calendar-event-label-end" : "")} style={{ color: meta.color, borderColor: meta.color, backgroundColor: event.type === "nationalHoliday" ? "#FFE8E3" : "#F4F1EA" }}>{event.title}</span>;
+            return <span key={event.id} className={"calendar-event-label" + (continuous ? " calendar-event-label-range" : " calendar-event-label-scattered") + (isStart ? " calendar-event-label-start" : "") + (isEnd ? " calendar-event-label-end" : "")} style={{ color: meta.color, borderColor: meta.color, backgroundColor: event.type === "nationalHoliday" ? "#FFE8E3" : "var(--paper)" }}>{event.title}</span>;
           })}
           {dayEvents.length > 2 && <span className="calendar-event-more">+{dayEvents.length - 2}</span>}
         </span>}
@@ -1184,7 +1162,7 @@ function MonthCalendar({ selected, onSelect, classes, hasSession, calendarEvents
     const isSelected = ds === selected;
     return (
       <button key={ds} className={"week-column" + (isSelected ? " week-column-selected" : "") + (isToday ? " week-column-today" : "")} onClick={() => onSelect(ds)}>
-        <div className="week-column-head"><span>週{WEEKDAY_FULL[d.getDay()]}</span><strong>{d.getMonth() + 1}/{d.getDate()}</strong>{isToday && <em>今天</em>}</div>
+        <div className="week-column-head"><span>{weekdayLabel(d.getDay())}</span><strong>{fmtDateShort(ds, { weekday: false })}</strong>{isToday && <em>今天</em>}</div>
         <div className="week-column-body">
           {dayEvents.length === 0 && dayClasses.length === 0 && <span className="week-empty">無排程</span>}
           {dayEvents.map((event) => { const meta = eventTypeMeta(event.type); return <span key={event.id} className="week-event" style={{ borderLeftColor: meta.color, background: event.type === "nationalHoliday" ? "#FFF0EB" : "#F5F2FF" }}><b>{event.title}</b><small>{event.schools?.length ? event.schools.join("、") : meta.label}</small></span>; })}
@@ -1310,7 +1288,7 @@ function CalendarEventForm({ date, initialEvent, knownSchools, onCancel, onCreat
         <div className="field calendar-schools-field"><span>適用學校（可複選）</span><details className="school-multi-picker"><summary>{schools.length ? `已選 ${schools.length} 所學校` : "全部學校"}</summary><div className="school-multi-options">{(knownSchools || []).length === 0 ? <span className="section-hint">目前沒有可選學校</span> : (knownSchools || []).map((name) => <label key={name}><input type="checkbox" checked={schools.includes(name)} onChange={() => setSchools((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name])} />{name}</label>)}</div></details></div>
         <label className="field calendar-event-note-field"><span>備註（選填）</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例：以學校公告為準" /></label>
       </div>
-      <div className="calendar-selected-dates"><span className="calendar-selected-dates-label">已選 {selectedDates.length} 日</span>{selectedDates.map((value) => <span className="calendar-date-chip" key={value}>{value}<button type="button" onClick={() => removeDate(value)} aria-label={`移除 ${value}`} disabled={selectedDates.length === 1}><X size={11} /></button></span>)}</div>
+      <div className="calendar-selected-dates"><span className="calendar-selected-dates-label">已選 {selectedDates.length} 日</span>{selectedDates.map((value) => <span className="calendar-date-chip" key={value}>{fmtDateShort(value)}<button type="button" aria-label={`移除 ${fmtDateShort(value)}`} onClick={() => removeDate(value)} disabled={selectedDates.length === 1}><X size={11} /></button></span>)}</div>
       <div className="form-actions">
         <button type="button" className="btn-ghost" onClick={onCancel}>取消</button>
         <button type="button" className="btn-primary" disabled={!title.trim() || selectedDates.length === 0} onClick={submit}>儲存事件</button>
@@ -1603,7 +1581,7 @@ function AttendanceStatusEditor({ studentName, value, onChange, onSave, onClear,
     <div className="attendance-editor-panel" role="dialog" aria-label={`${studentName}出缺勤紀錄編輯`}>
       <div className="attendance-editor-heading">
         <div><strong>{studentName}</strong><span>修改這一天的出缺勤狀態</span></div>
-        <button type="button" className="icon-btn" onClick={onCancel} title="關閉編輯"><X size={15} /></button>
+        <button type="button" className="icon-btn" onClick={onCancel} title="關閉編輯" aria-label="關閉編輯"><X size={15} /></button>
       </div>
       {anomalyReason && <div className="attendance-editor-warning"><strong>這筆資料被判定為異常：{anomalyReason}</strong><span>這裡沒有「停班」出缺勤狀態；若學生的停班／停課設定正確，請直接清除這筆紀錄。只有在確認判定或學生資料錯誤時，才改選正確狀態後儲存。</span></div>}
       <div className="attendance-editor-options">
@@ -1774,7 +1752,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           {editingCell && editingStudent && (
             <div className="attendance-editor-drawer">
               <AttendanceStatusEditor
-                studentName={`${editingDisplayStudent.name} · ${editingCell.date}`}
+                studentName={`${editingDisplayStudent.name} · ${fmtDateShort(editingCell.date)}`}
                 value={editingValue}
                 anomalyReason={editingCell.anomalyReason || ""}
                 onChange={(value) => setEditingCell((current) => current ? { ...current, draftValue: value } : current)}
@@ -1812,14 +1790,14 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           {cancelOpen && (
             <div className="inline-form">
               <input className="student-input" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="取消原因（例：颱風、學校活動）" autoFocus />
-              <button className="btn-ghost btn-xs" onClick={() => { setCancelOpen(false); setCancelReason(""); }}>取消</button>
+              <button className="btn-ghost btn-xs" onClick={() => { setCancelOpen(false); setCancelReason(""); }}>返回</button>
               <button className="btn-primary btn-sm" onClick={confirmCancel}>確定取消上課</button>
             </div>
           )}
           {addOpen && (
             <div className="inline-form">
               <input type="time" className="student-input" value={addTime} onChange={(e) => setAddTime(e.target.value)} placeholder="時間（選填）" />
-              <button className="btn-ghost btn-xs" onClick={() => { setAddOpen(false); setAddTime(""); }}>取消</button>
+              <button className="btn-ghost btn-xs" onClick={() => { setAddOpen(false); setAddTime(""); }}>返回</button>
               <button className="btn-primary btn-sm" onClick={confirmAdd}>確定新增本次上課</button>
             </div>
           )}
@@ -1983,7 +1961,7 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
               <div className="attendance-student-card-head"><strong>{stat.student.name}</strong><span>{stat.countedSessions} 有效課次</span></div>
               <div className="attendance-student-rate">出席率 <b>{stat.attendanceRate === null ? "—" : `${stat.attendanceRate}%`}</b></div>
               <div className="attendance-mini-bars">
-                {[{ key: "遲到", color: "#4C6C99" }, { key: "早退", color: "#7A5EA8" }, { key: "請假", color: "#B8863B" }, { key: "曠課", color: "#B23A34" }].map(({ key, color }) => (
+                {["遲到", "早退", "請假", "曠課"].map((key) => ({ key, color: STATUS_STYLE[key].fg })).map(({ key, color }) => (
                   <div className="attendance-mini-bar-row" key={key}><span>{key}</span><div><i style={{ width: `${(stat[key] / maxStudentEvents) * 100}%`, background: color }} /></div><b>{stat[key]}</b></div>
                 ))}
               </div>
@@ -2001,15 +1979,15 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
           <div className="attendance-timeline-list">
             {anomalyRows.slice().reverse().map(({ date, summary, anomalies, wholeDayStatus }) => (
               <div className={"attendance-timeline-row" + (anomalies.length ? " has-anomaly" : "")} key={date}>
-                <button type="button" className="attendance-timeline-date-button" onClick={() => onJump(date)} title={`開啟 ${date} 單日紀錄`}>
-                  <span className="attendance-timeline-date">{date}<small>{WEEKDAY_FULL[weekdayOf(date)]}</small></span>
+                <button type="button" className="attendance-timeline-date-button" onClick={() => onJump(date)} title={`開啟 ${fmtDateShort(date)} 單日紀錄`}>
+                  <span className="attendance-timeline-date">{fmtDateShort(date, { weekday: false })}<small>{weekdayLabel(weekdayOf(date))}</small></span>
                 </button>
                 <div className="attendance-timeline-main">
                   <strong>{summary.recorded} 筆紀錄</strong>
                   {anomalies.length ? (
                     <div className="attendance-anomaly-list">
                       {anomalies.map((anomaly) => (
-                        <button type="button" className="attendance-anomaly-item" key={`${anomaly.studentId}:${anomaly.reason}`} onClick={() => openCell(date, anomaly.studentId)} title={`直接修改 ${anomaly.studentName} ${date} 的紀錄`}>
+                        <button type="button" className="attendance-anomaly-item" key={`${anomaly.studentId}:${anomaly.reason}`} onClick={() => openCell(date, anomaly.studentId)} title={`直接修改 ${anomaly.studentName} ${fmtDateShort(date)} 的紀錄`}>
                           <b>{anomaly.studentName}</b><AttendanceStatusChips value={anomaly.value} compact /><span>{anomaly.reason}</span><em>修改 ›</em>
                         </button>
                       ))}
@@ -2026,7 +2004,7 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
       {editingCell && editingStudent && (
         <div className="attendance-editor-drawer">
           <AttendanceStatusEditor
-            studentName={`${editingDisplayStudent.name} · ${editingCell.date}`}
+            studentName={`${editingDisplayStudent.name} · ${fmtDateShort(editingCell.date)}`}
             value={editingValue}
             anomalyReason={editingAnomalyReason}
             onChange={(value) => setEditingCell((current) => current ? { ...current, draftValue: value } : current)}
@@ -2046,11 +2024,11 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
               <tbody>
                 {visibleRows.map(({ date, records }) => (
                   <tr key={date}>
-                    <td className="matrix-row-head matrix-row-head-clickable" onClick={() => onJump(date)}>{date}</td>
+                    <td className="matrix-row-head matrix-row-head-clickable" onClick={() => onJump(date)}>{fmtDateShort(date)}</td>
                     {displayStudents.map((student) => {
                       const value = records[student.id];
                       const statuses = normalizeAttendanceStatus(value);
-                      return <td key={student.id} className="matrix-cell attendance-editable-cell"><button type="button" className="attendance-cell-button" onClick={() => openCell(date, student.id)} title={`修改 ${student.name} ${date} 的紀錄`}><AttendanceStatusChips value={statuses} compact /></button></td>;
+                      return <td key={student.id} className="matrix-cell attendance-editable-cell"><button type="button" className="attendance-cell-button" onClick={() => openCell(date, student.id)} title={`修改 ${student.name} ${fmtDateShort(date)} 的紀錄`}><AttendanceStatusChips value={statuses} compact /></button></td>;
                     })}
                   </tr>
                 ))}
@@ -2394,7 +2372,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                       <div className="assessment-column-name">{col.name}</div>
                       <span className="assessment-column-count">已填 {count} / 當時 {enrolledCount} 人</span>
                     </div>
-                    {(withSegment ? (col.date || col.subject) : col.subject) && <div className="assessment-column-date">{withSegment && col.date}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
+                    {(withSegment ? (col.date || col.subject) : col.subject) && <div className="assessment-column-date">{withSegment && col.date && fmtDateShort(col.date, { weekday: false })}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
                     {withSegment && <div className="assessment-column-segment">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     <div className="assessment-column-score-row">
                       <strong>{fmtNum(avg)}</strong>
@@ -2449,14 +2427,14 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={chartData} margin={{ top: 5, right: 12, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: CHART_THEME.tick }} tickLine={false} axisLine={{ stroke: CHART_THEME.axis }} />
+                <YAxis tick={{ fontSize: 11, fill: CHART_THEME.tick }} tickLine={false} axisLine={{ stroke: CHART_THEME.axis }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="班平均" stroke={CHART_COLORS[0]} strokeWidth={2} connectNulls dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="班平均" stroke={CHART_THEME.average} strokeDasharray="5 4" strokeWidth={1.5} connectNulls dot={false} />
                 {focusStudentId && (
-                  <Line type="monotone" dataKey={rosterStudents.find((s) => s.id === focusStudentId)?.name || "個人"} stroke={CHART_COLORS[1]} strokeWidth={2} connectNulls dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey={rosterStudents.find((s) => s.id === focusStudentId)?.name || "個人"} stroke={CHART_THEME.line} strokeWidth={2.5} connectNulls dot={{ r: 4, fill: CHART_THEME.line, stroke: "#FFFFFF", strokeWidth: 1.5 }} />
                 )}
               </LineChart>
             </ResponsiveContainer>
@@ -2493,7 +2471,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                           </div>
                         </div>
                       )}
-                      {(withSegment ? (col.date || col.subject) : col.subject) && <div className="matrix-col-date">{withSegment && col.date}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
+                      {(withSegment ? (col.date || col.subject) : col.subject) && <div className="matrix-col-date">{withSegment && col.date && fmtDateShort(col.date, { weekday: false })}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
                       {withSegment && <div className="matrix-col-range">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     </th>
                   ))}
@@ -2652,10 +2630,10 @@ function FeeTab({ cls }) {
               <div className="fee-card-top">
                 <div>
                   <div className="fee-card-name">{student ? student.name : "（已移除的學生）"}</div>
-                  <div className="fee-card-period">{c.periodStart || "?"} ～ {c.periodEnd || "?"}</div>
+                  <div className="fee-card-period">{c.periodStart ? fmtDate(c.periodStart, { weekday: false }) : "?"} ～ {c.periodEnd ? fmtDate(c.periodEnd, { weekday: false }) : "?"}</div>
                 </div>
                 <span className={"tag " + (c.paid ? "tag-good" : overdue ? "tag-overdue" : "tag-bad")}>
-                  {c.paid ? `已收 ${c.paidDate}` : overdue ? "逾期" : "未收"}
+                  {c.paid ? `已收 ${c.paidDate ? fmtDate(c.paidDate, { weekday: false }) : ""}` : overdue ? "逾期" : "未收"}
                 </span>
               </div>
               <div className="fee-card-breakdown">
@@ -2998,7 +2976,7 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
                 <select className="student-input student-group-select" value={displayStudent.group || ""} onChange={(e) => edit(s.id, "group", e.target.value)} aria-label={`${displayStudent.name}分組`}>
                   {STUDENT_GROUPS.map((option) => <option key={option || "none"} value={option}>{option || "未分組／不適用"}</option>)}
                 </select>
-                <span className="student-inactive-date">{s.endDate ? `停班於 ${s.endDate}` : ""}</span>
+                <span className="student-inactive-date">{s.endDate ? `停班於 ${fmtDate(s.endDate, { weekday: false })}` : ""}</span>
                 <button className="btn-primary btn-xs" title="誤按停班時清除停班日期，保留原本學生 ID 與歷史紀錄" onClick={() => cancelStop(s.id)}>撤銷停班</button>
                 <button className="btn-ghost btn-xs" title="保留停班歷史，從今天開始復課" onClick={() => reactivate(s.id)}>今天復課</button>
                 <ConfirmDelete label={`永久刪除${displayStudent.name}的所有資料？`} onConfirm={() => removePermanently(s.id)} />
@@ -3030,7 +3008,7 @@ function SubjectEditor({ cls, onUpdateClass }) {
       <div className="section-hint" style={{ marginBottom: 8 }}>若這個班同時上多個科目（例如物理＋化學），在這裡新增科目標籤，平時考／段考就能分開統計。</div>
       <div className="chip-row" style={{ marginBottom: 8 }}>
         {subjects.map((sub) => (
-          <span key={sub} className="chip chip-removable">{sub}<button onClick={() => remove(sub)}><X size={12} /></button></span>
+          <span key={sub} className="chip chip-removable">{sub}<button onClick={() => remove(sub)} aria-label={`移除 ${sub}`} title={`移除 ${sub}`}><X size={12} /></button></span>
         ))}
         {subjects.length === 0 && <span className="empty-note">尚未設定分科（成績將視為單一科目）</span>}
       </div>
@@ -3076,8 +3054,8 @@ function ScheduleEditor({ cls, onUpdateClass }) {
           return (
             <div key={r.id} className={"rule-chip" + (active ? "" : " rule-chip-past")}>
               <span>
-                {r.interval === 2 ? "隔週" : "每週"}週{WEEKDAY_FULL[r.dayOfWeek]}{formatTimeRange(r.startTime, r.endTime) ? ` ${formatTimeRange(r.startTime, r.endTime)}` : ""}
-                {"　"}生效：{r.effectiveFrom}{r.effectiveTo ? ` ～ ${r.effectiveTo}` : "（持續中）"}
+                {ruleWeekLabel(r.interval, r.dayOfWeek)}{formatTimeRange(r.startTime, r.endTime) ? ` ${formatTimeRange(r.startTime, r.endTime)}` : ""}
+                {"　"}生效：{fmtDateRange(r.effectiveFrom, r.effectiveTo)}
               </span>
               {endingRuleId === r.id ? (
                 <span className="confirm-inline">
@@ -3143,7 +3121,7 @@ function OverrideList({ cls, onUpdateClass }) {
       <div className="rule-list">
         {overrides.map((o) => (
           <div key={o.date} className="rule-chip">
-            <span>{o.date}（{WEEKDAY_FULL[weekdayOf(o.date)]}）· {o.action === "add" ? "新增上課" : "取消上課"}{o.time ? ` · ${o.time}` : ""}{o.note ? ` · ${o.note}` : ""}</span>
+            <span>{fmtDate(o.date)} · {o.action === "add" ? "新增上課" : "取消上課"}{o.time ? ` · ${o.time}` : ""}{o.note ? ` · ${o.note}` : ""}</span>
             <ConfirmDelete label="移除此調整？" onConfirm={() => remove(o.date)} />
           </div>
         ))}
@@ -3157,19 +3135,14 @@ function OverrideList({ cls, onUpdateClass }) {
 /* ------------------------------------------------------------------ */
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap');
-
-:root {
-  --paper: #FAF8F3; --ink: #21262B; --ink-soft: #5B6672; --brass: #B8863B;
-  --brass-soft: #EFE3CC; --line: #E1DACB; --card: #FFFFFF;
-}
+${FONT_IMPORT_CSS}
+${THEME_VARS_CSS}
 * { box-sizing: border-box; }
 .shell { min-height: 100vh; width: 100%; overflow-x: hidden; background: var(--paper); color: var(--ink); font-family: 'Noto Sans TC', sans-serif; padding-bottom: 40px; }
 .loading { padding: 40px; text-align: center; color: var(--ink-soft); }
 .load-error-screen { max-width: 440px; margin: 60px auto; padding: 24px; background: #FFFFFF; border: 1px solid #E4DFD3; border-radius: 14px; text-align: center; line-height: 1.7; }
 .load-error-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
 .load-error-banner { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 12px 16px 0; padding: 10px 14px; border-radius: 10px; background: #FBEDEA; border: 1px solid #E8B8B0; color: #8C332E; font-size: 14px; line-height: 1.6; }
-.load-error-btn { border: 0; border-radius: 9px; padding: 8px 14px; background: #B8863B; color: #FFFFFF; font-weight: 700; cursor: pointer; }
 
 .topnav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--paper); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; margin-right: 4px; }
@@ -3179,19 +3152,16 @@ const CSS = `
 .nav-pills { display: flex; gap: 6px; }
 .nav-pills-center { margin: 0 auto; }
 .nav-pills-sub { margin-bottom: 2px; }
-.pill { border: 1px solid var(--line); background: var(--card); padding: 7px 14px; border-radius: 999px; font-size: 13px; color: var(--ink-soft); cursor: pointer; font-family: inherit; }
-.pill-sm { padding: 5px 12px; font-size: 12px; }
-.pill-active { background: var(--ink); color: white; border-color: var(--ink); }
 .pill-warning { background: #FBEAE9; color: #8C332E; border-color: #F0C6C3; }
 
 .topnav-actions { display: flex; align-items: center; gap: 10px; }
   .save-indicator { font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
   .save-indicator-error { border: none; background: none; color: #B23A34; cursor: pointer; font-family: inherit; padding: 0; text-decoration: underline; }
 
-.toast { position: sticky; top: 58px; z-index: 9; margin: 0 16px 0; max-width: 1148px; margin-left: auto; margin-right: auto; background: var(--ink); color: white; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.toast { position: sticky; top: 58px; z-index: 9; margin: 0 16px 0; max-width: 1148px; margin-left: auto; margin-right: auto; background: var(--ink); color: white; border-radius: 10px; padding: 10px 14px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
 .toast button { background: none; border: none; color: white; opacity: 0.7; cursor: pointer; display: flex; }
 
-.backup-warning { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #FBEAE9; border: 1px solid #F0C6C3; color: #8C332E; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 12px; flex-wrap: wrap; }
+.backup-warning { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #FBEAE9; border: 1px solid #F0C6C3; color: #8C332E; border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; flex-wrap: wrap; }
 
 .view-pad { padding: 16px; max-width: 1180px; margin: 0 auto; }
 .view-pad-attendance { max-width: 1180px; }
@@ -3206,24 +3176,24 @@ const CSS = `
 .calendar-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 0; }
 .calendar-weekdays { display: grid; grid-template-columns: repeat(7,1fr); text-align: center; font-size: 11px; color: var(--ink-soft); margin-bottom: 4px; }
 .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 3px; }
-.calendar-cell { min-height: 74px; border: 1px solid transparent; background: none; border-radius: 9px; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 3px; padding: 6px 3px 4px; cursor: pointer; font-family: inherit; overflow: hidden; }
+.calendar-cell { min-height: 74px; border: 1px solid transparent; background: none; border-radius: 10px; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 3px; padding: 6px 3px 4px; cursor: pointer; font-family: inherit; overflow: hidden; }
 .calendar-cell-num { font-family: 'IBM Plex Mono', monospace; font-size: 12px; text-align: center; }
 .calendar-cell-out { opacity: 0.38; }
 .calendar-cell-dots { display: flex; align-self: center; gap: 2px; height: 5px; }
 .calendar-cell-event-labels { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; min-height: 0; overflow: hidden; }
-.calendar-event-label { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-left: 3px solid; border-radius: 3px; padding: 2px 3px; font-size: 9px; line-height: 1.2; text-align: left; }
+.calendar-event-label { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-left: 3px solid; border-radius: 6px; padding: 2px 3px; font-size: 11px; line-height: 1.2; text-align: left; }
 .calendar-event-label-range { background: #F0EAF5 !important; }
 .calendar-event-label-scattered { border-style: dashed; }
 .calendar-event-label-start { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
 .calendar-event-label-end { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
-.calendar-event-more { color: var(--ink-soft); font-size: 9px; text-align: left; padding-left: 4px; }
+.calendar-event-more { color: var(--ink-soft); font-size: 11px; text-align: left; padding-left: 4px; }
 .calendar-cell-holiday { background: #FFF1EE; color: #8C332E; }
 .calendar-cell-selected { border-color: var(--ink); background: #F1F1EE; }
 .calendar-cell-selected.calendar-cell-holiday { background: #FFE1DC; }
 .calendar-cell-today { box-shadow: 0 0 0 2px var(--brass-soft); border-color: var(--brass); }
 .dot, .event-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .event-dot-large { width: 9px; height: 9px; margin-top: 4px; }
-.calendar-events-panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 14px; }
+.calendar-events-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin-top: 14px; }
 .calendar-events-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .calendar-events-title { margin: 0; }
 .calendar-events-count, .calendar-event-duration { color: var(--ink-soft); font-size: 11px; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
@@ -3248,12 +3218,11 @@ const CSS = `
   .calendar-selected-dates-label { color: var(--ink-soft); font-size: 11px; }
   .calendar-date-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 7px; background: #F8F5EE; color: var(--ink-soft); font-size: 11px; font-family: 'IBM Plex Mono', monospace; }
   .calendar-date-chip button { display: inline-flex; align-items: center; border: 0; padding: 0; background: none; color: var(--ink-soft); }
-  .calendar-date-chip button:disabled { opacity: 0.35; cursor: default; }
-  .btn-xs { padding: 4px 7px; font-size: 11px; }
+  .calendar-date-chip button:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
 
 .card-list { display: flex; flex-direction: column; gap: 8px; }
 
-.class-card { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
+.class-card { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
 .class-card-static { cursor: default; }
 .class-card-clickable { cursor: pointer; border: none; background: none; padding: 0; flex: 1; text-align: left; font-family: inherit; min-width: 0; }
 .class-card-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
@@ -3273,26 +3242,19 @@ const CSS = `
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-.btn-primary { background: var(--ink); color: white; border: none; border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
-.btn-primary:disabled { opacity: 0.6; cursor: default; }
-.btn-sm { padding: 6px 11px; font-size: 12px; }
-.btn-ghost { background: none; border: 1px solid var(--line); color: var(--ink-soft); border-radius: 9px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
-.btn-ghost:disabled { opacity: 0.6; cursor: default; }
-.btn-xs { padding: 5px 10px; font-size: 11px; }
-.btn-danger { background: #B23A34; color: white; border: none; border-radius: 9px; padding: 6px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
 
 .icon-btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); flex-shrink: 0; }
 .icon-btn-danger { color: #B23A34; }
 
-.confirm-inline { display: inline-flex; align-items: center; gap: 6px; background: #FBEAE9; border: 1px solid #F0C6C3; border-radius: 9px; padding: 4px 6px; flex-wrap: wrap; }
+.confirm-inline { display: inline-flex; align-items: center; gap: 6px; background: #FBEAE9; border: 1px solid #F0C6C3; border-radius: 10px; padding: 4px 6px; flex-wrap: wrap; }
 .confirm-inline-neutral { background: var(--brass-soft); border-color: #E3D2A9; }
 .confirm-inline-label-neutral { color: #8C6D2E; }
-.trial-tag { display: inline-block; margin-left: 4px; font-size: 10px; font-weight: 700; color: #7A5EA8; background: #F1EAF6; border: 1px solid #DCC8ED; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
-.confirm-inline-label { font-size: 11.5px; color: #B23A34; padding-left: 4px; }
+.trial-tag { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 700; color: #7A5EA8; background: #F1EAF6; border: 1px solid #DCC8ED; border-radius: 6px; padding: 0 4px; vertical-align: middle; }
+.confirm-inline-label { font-size: 12px; color: #B23A34; padding-left: 4px; }
 
 .inline-form { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; background: var(--brass-soft); border: 1px solid #E3D2A9; border-radius: 10px; padding: 8px 10px; }
 
-.form-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 10px; }
+.form-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 10px; }
 .form-title { font-weight: 700; margin-bottom: 10px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); min-width: 0; }
@@ -3326,7 +3288,7 @@ const CSS = `
 .tag-overdue { background: #B23A34; color: white; }
 
 .fee-overview-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.fee-stat { font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; }
+.fee-stat { font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 999px; }
 .fee-stat-overdue { background: #B23A34; color: white; }
 .fee-stat-bad { background: #F7E5E3; color: #B23A34; }
 .fee-stat-good { background: #EAF3EC; color: #3F7D5C; }
@@ -3347,7 +3309,7 @@ const CSS = `
 .fee-chip-active { border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass-soft); }
 
 .segmented { display: inline-flex; background: #EEEEEC; border-radius: 10px; padding: 3px; gap: 2px; }
-.segmented-btn { border: none; background: transparent; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+.segmented-btn { border: none; background: transparent; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--ink-soft); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
 .segmented-btn.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
 
 .roll-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
@@ -3355,17 +3317,17 @@ const CSS = `
 .roll-name { min-width: 74px; font-size: 13px; font-weight: 500; }
 .roll-school { font-size: 11px; color: var(--ink-soft); font-weight: 400; }
 .status-group { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; }
-.status-btn-disabled { opacity: 0.42; cursor: not-allowed; }
-.status-btn { border: 1px solid var(--line); background: white; color: var(--ink-soft); border-radius: 7px; padding: 5px 9px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.status-btn-disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+.status-btn { border: 1px solid var(--line); background: white; color: var(--ink-soft); border-radius: 6px; padding: 5px 9px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .status-btn-active { font-weight: 700; }
 
 .filter-select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-family: inherit; background: white; color: var(--ink); }
 
-.stats-panel { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.stats-panel { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .stats-row-head { display: flex; gap: 14px; font-size: 13px; font-weight: 700; margin-bottom: 10px; flex-wrap: wrap; }
 .stats-row-head span:nth-child(2), .stats-row-head span:nth-child(4) { color: var(--brass); font-family: 'IBM Plex Mono', monospace; }
 .stats-table { display: flex; flex-direction: column; gap: 2px; }
-.stats-table-row { display: grid; grid-template-columns: 1fr 70px 70px; font-size: 12.5px; padding: 4px 2px; }
+.stats-table-row { display: grid; grid-template-columns: 1fr 70px 70px; font-size: 13px; padding: 4px 2px; }
 .stats-table-head { color: var(--ink-soft); font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 2px; }
 .stats-table-row span:nth-child(2), .stats-table-row span:nth-child(3) { font-family: 'IBM Plex Mono', monospace; text-align: right; }
 .stats-table-row-5 { display: grid; grid-template-columns: minmax(60px,1fr) 44px 44px 36px 52px; font-size: 12px; padding: 4px 2px; gap: 3px; }
@@ -3377,9 +3339,8 @@ const CSS = `
 .stats-table-row-rate { display: grid; grid-template-columns: minmax(60px,1fr) 44px 44px 44px 44px; font-size: 12px; padding: 4px 2px; gap: 3px; }
 .stats-table-row-rate span:not(:first-child) { font-family: 'IBM Plex Mono', monospace; text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .stats-table-scroll { overflow-x: auto; max-width: 100%; }
-.icon-btn:disabled { opacity: 0.35; cursor: default; }
 .journal-textarea { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical; background: white; color: var(--ink); }
-.status-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 4px; border: 1px solid transparent; border-radius: 5px; font-size: 10.5px; font-weight: 700; }
+.status-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 4px; border: 1px solid transparent; border-radius: 6px; font-size: 11px; font-weight: 700; }
 .status-chip-list { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 2px; }
 .status-chip-list-compact { max-width: 76px; }
 .status-empty { color: #B4B5B0; font-size: 12px; }
@@ -3392,26 +3353,26 @@ const CSS = `
 .attendance-metric-positive { background: #EAF3EC; border-color: #BFDCC9; }
 .attendance-metric-warning { background: #FBF3DE; border-color: #EFDBA0; }
 .attendance-metric-danger { background: #FBEAE9; border-color: #F0C6C3; }
-.attendance-metric > span, .attendance-metric > small { display: block; color: var(--ink-soft); font-size: 10.5px; }
+.attendance-metric > span, .attendance-metric > small { display: block; color: var(--ink-soft); font-size: 11px; }
 .attendance-metric-primary > span, .attendance-metric-primary > small { color: rgba(255,255,255,0.72); }
 .attendance-metric > strong { display: block; margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'IBM Plex Mono', monospace; font-size: 17px; }
-.attendance-section-card { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.attendance-section-card { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
 .attendance-student-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
-.attendance-student-card { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #F8F5EE; }
+.attendance-student-card { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #F8F5EE; }
 .attendance-student-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
 .attendance-student-card-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attendance-student-card-head span, .attendance-student-rate { color: var(--ink-soft); font-size: 10px; }
+.attendance-student-card-head span, .attendance-student-rate { color: var(--ink-soft); font-size: 11px; }
 .attendance-student-rate { margin-top: 7px; }
 .attendance-student-rate b { float: right; color: var(--ink); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
 .attendance-mini-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.attendance-mini-bar-row { display: grid; grid-template-columns: 30px minmax(30px, 1fr) 20px; align-items: center; gap: 5px; color: var(--ink-soft); font-size: 10px; }
+.attendance-mini-bar-row { display: grid; grid-template-columns: 30px minmax(30px, 1fr) 20px; align-items: center; gap: 5px; color: var(--ink-soft); font-size: 11px; }
 .attendance-mini-bar-row > div { height: 5px; overflow: hidden; border-radius: 999px; background: #E7E5DE; }
 .attendance-mini-bar-row i { display: block; height: 100%; border-radius: inherit; }
-.attendance-mini-bar-row b { color: var(--ink); text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
+.attendance-mini-bar-row b { color: var(--ink); text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 .attendance-timeline-list { display: flex; flex-direction: column; gap: 5px; }
 .attendance-timeline-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) 18px; align-items: start; gap: 9px; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #F8F5EE; color: var(--ink); text-align: left; font-family: inherit; }
 .attendance-timeline-row:hover { border-color: var(--brass); background: #FFFDF7; }
-.attendance-timeline-row.has-anomaly { border-left: 3px solid #B8863B; }
+.attendance-timeline-row.has-anomaly { border-left: 3px solid var(--brass); }
 .attendance-timeline-date-button { align-self: stretch; border: 0; padding: 3px 0; background: transparent; color: inherit; text-align: left; font-family: inherit; cursor: pointer; }
 .attendance-timeline-date-button:hover .attendance-timeline-date { color: var(--brass); text-decoration: underline; }
 .attendance-timeline-date { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
@@ -3420,7 +3381,7 @@ const CSS = `
 .attendance-timeline-main > span { overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
 .attendance-timeline-main > strong { white-space: nowrap; }
 .attendance-anomaly-list { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 4px; }
-.attendance-anomaly-item { display: grid; grid-template-columns: minmax(70px, auto) 78px minmax(120px, 1fr) auto; align-items: center; gap: 6px; width: 100%; border: 1px solid #E5D4A9; border-radius: 7px; padding: 5px 7px; background: #FFFDF7; color: var(--ink); text-align: left; font-family: inherit; font-size: 11px; cursor: pointer; }
+.attendance-anomaly-item { display: grid; grid-template-columns: minmax(70px, auto) 78px minmax(120px, 1fr) auto; align-items: center; gap: 6px; width: 100%; border: 1px solid #E5D4A9; border-radius: 6px; padding: 5px 7px; background: #FFFDF7; color: var(--ink); text-align: left; font-family: inherit; font-size: 11px; cursor: pointer; }
 .attendance-anomaly-item:hover, .attendance-anomaly-item:focus-visible { border-color: var(--brass); box-shadow: 0 2px 7px rgba(184,134,59,0.14); outline: none; }
 .attendance-anomaly-item b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attendance-anomaly-item > span { overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
@@ -3431,7 +3392,7 @@ const CSS = `
 .attendance-cell-button:hover, .attendance-cell-button:focus-visible { border-color: var(--brass); background: #FFFDF7; outline: none; }
 .attendance-matrix .matrix-col-head { min-width: 150px; }
 .attendance-editor-drawer { position: fixed; z-index: 20; left: 50%; bottom: 14px; width: min(820px, calc(100vw - 28px)); max-height: calc(100vh - 28px); overflow: auto; transform: translateX(-50%); }
-.attendance-editor-panel { margin-top: 0; padding: 14px 16px; border: 1px solid var(--brass); border-radius: 12px; background: #FFFDF7; box-shadow: 0 8px 24px rgba(33,38,43,0.18); }
+.attendance-editor-panel { margin-top: 0; padding: 14px 16px; border: 1px solid var(--brass); border-radius: 14px; background: #FFFDF7; box-shadow: 0 8px 24px rgba(33,38,43,0.18); }
 .attendance-editor-warning { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; padding: 9px 10px; border: 1px solid #F0C6C3; border-radius: 8px; background: #FBEAE9; color: #8C332E; font-size: 11px; }
 .attendance-editor-warning strong { font-size: 12px; }
 .attendance-editor-warning span { color: #8C332E; line-height: 1.5; }
@@ -3444,22 +3405,22 @@ const CSS = `
 .student-inactive-name-input { min-width: 135px; }
 .student-row-inactive .student-input { min-width: 135px; }
 .student-group-select { flex: 0 1 132px; min-width: 118px; }
-.student-group-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 999px; background: #E9EFF6; color: #3F5E8C; font-size: 10px; font-weight: 700; vertical-align: middle; }
+.student-group-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 999px; background: #E9EFF6; color: #3F5E8C; font-size: 11px; font-weight: 700; vertical-align: middle; }
 .attendance-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .attendance-editor-heading strong, .attendance-editor-heading span { display: block; }
 .attendance-editor-heading span { margin-top: 2px; color: var(--ink-soft); font-size: 11px; }
 .attendance-editor-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.attendance-editor-status { border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; background: white; color: var(--ink-soft); font-family: inherit; font-size: 12px; cursor: pointer; }
+.attendance-editor-status { border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; background: white; color: var(--ink-soft); font-family: inherit; font-size: 12px; cursor: pointer; }
 .attendance-editor-status:hover:not(:disabled) { border-color: var(--brass); }
-.attendance-editor-status:disabled { opacity: 0.42; cursor: not-allowed; }
-.attendance-editor-hint { margin-top: 8px; color: var(--ink-soft); font-size: 10.5px; }
+.attendance-editor-status:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+.attendance-editor-hint { margin-top: 8px; color: var(--ink-soft); font-size: 11px; }
 .attendance-editor-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 6px; margin-top: 10px; }
 .matrix-row-head-clickable { cursor: pointer; }
 .matrix-row-head-clickable:hover { text-decoration: underline; }
 
-.chart-card { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.chart-card { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 
-.score-dashboard { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.score-dashboard { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .score-dashboard-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .score-dashboard-title { margin-top: 2px; font-size: 15px; font-weight: 700; }
 .score-dashboard-note { flex-shrink: 0; color: var(--ink-soft); font-size: 11px; }
@@ -3485,12 +3446,12 @@ const CSS = `
 .assessment-column-card { flex: 0 0 180px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #F8F5EE; }
 .assessment-column-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .assessment-column-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
-.assessment-column-count, .assessment-column-date, .assessment-column-range, .assessment-column-segment { color: var(--ink-soft); font-size: 10px; }
+.assessment-column-count, .assessment-column-date, .assessment-column-range, .assessment-column-segment { color: var(--ink-soft); font-size: 11px; }
 .assessment-column-date { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'IBM Plex Mono', monospace; }
 .assessment-column-segment { margin-top: 3px; min-height: 14px; overflow-wrap: anywhere; }
 .assessment-column-score-row { display: flex; align-items: baseline; gap: 5px; margin-top: 9px; }
 .assessment-column-score-row strong { font-family: 'IBM Plex Mono', monospace; font-size: 21px; }
-.assessment-column-score-row span { color: var(--ink-soft); font-size: 10px; }
+.assessment-column-score-row span { color: var(--ink-soft); font-size: 11px; }
 .assessment-column-bar { height: 7px; overflow: hidden; margin: 4px 0 6px; border-radius: 999px; background: #EEEEEC; }
 .assessment-column-bar span { display: block; height: 100%; border-radius: inherit; }
 .score-leaderboard-list { display: flex; flex-direction: column; gap: 5px; }
@@ -3498,13 +3459,13 @@ const CSS = `
 .score-leaderboard-rank { color: var(--ink-soft); text-align: center; font-family: 'IBM Plex Mono', monospace; }
 .score-leaderboard-name { display: flex; align-items: center; gap: 5px; overflow: hidden; font-weight: 600; }
 .score-leaderboard-name > span:first-child, .score-leaderboard-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.score-leaderboard-count { flex-shrink: 0; color: var(--ink-soft); font-size: 10px; font-weight: 400; }
+.score-leaderboard-count { flex-shrink: 0; color: var(--ink-soft); font-size: 11px; font-weight: 400; }
 .score-leaderboard-track { height: 7px; margin-top: 4px; }
 .score-leaderboard-score, .score-leaderboard-delta, .score-leaderboard-pr, .score-leaderboard-latest { overflow: hidden; text-align: right; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
 .score-leaderboard-score { font-size: 14px; }
 .score-leaderboard-delta.is-up { color: #3F7D5C; }
 .score-leaderboard-delta.is-down { color: #B23A34; }
-.score-leaderboard-pr, .score-leaderboard-latest { color: var(--ink-soft); font-size: 10px; }
+.score-leaderboard-pr, .score-leaderboard-latest { color: var(--ink-soft); font-size: 11px; }
 
 .matrix-scroll { overflow: auto; max-height: min(56vh, 520px); margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .matrix { border-collapse: separate; border-spacing: 0; width: 100%; min-width: max-content; background: var(--card); }
@@ -3513,19 +3474,18 @@ const CSS = `
 .matrix-corner { position: sticky !important; top: 0; left: 0; background: var(--ink) !important; color: white; z-index: 5 !important; min-width: 88px; font-size: 12px; text-align: left; }
 .matrix-row-head { position: sticky; left: 0; background: var(--card); z-index: 2; min-width: 88px; font-size: 13px; font-weight: 500; white-space: nowrap; box-shadow: 2px 0 0 var(--line); }
 .matrix-col-head { min-width: 118px; position: relative; font-size: 12px; }
-.matrix-col-school { margin-top: 3px; overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 400; }
+.matrix-col-school { margin-top: 3px; overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; }
 .matrix-col-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 5px; min-height: 28px; }
 .matrix-col-head-top .confirm-inline { padding: 2px 3px; }
-.matrix-col-head-top .icon-btn { width: 25px; height: 25px; border-radius: 6px; }
+.matrix-col-head-top .icon-btn { width: 28px; height: 28px; border-radius: 8px; }
 .matrix-col-head-actions { display: flex; align-items: flex-start; gap: 2px; flex-shrink: 0; }
 .matrix-col-name { min-width: 0; padding-top: 3px; font-weight: 700; overflow-wrap: anywhere; }
 .assessment-name-editor { width: 100%; display: grid; gap: 5px; }
 .assessment-name-input, .assessment-range-input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--brass); border-radius: 6px; padding: 5px 6px; background: #FFFDF7; color: var(--ink); font-family: inherit; font-size: 12px; font-weight: 600; outline: 2px solid rgba(184,134,59,0.16); }
 .assessment-range-input { font-size: 11px; font-weight: 500; outline-color: rgba(184,134,59,0.1); }
 .assessment-name-editor-actions { display: flex; align-items: center; gap: 4px; margin-top: 0; }
-.assessment-name-editor-actions .btn-xs { padding: 4px 7px; }
-.matrix-col-date { color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; font-size: 10px; margin-bottom: 3px; }
-.matrix-col-range { color: var(--ink-soft); font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.matrix-col-date { color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-bottom: 3px; }
+.matrix-col-range { color: var(--ink-soft); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .matrix-cell { text-align: center; }
 .matrix-input { width: 64px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; text-align: center; transition: background 0.15s ease, border-color 0.15s ease; }
 .matrix-input::placeholder { color: #A2A5A1; }
@@ -3562,14 +3522,14 @@ const CSS = `
   .score-leaderboard-pr, .score-leaderboard-latest { display: none; }
 }
 
-.fee-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.fee-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
 .fee-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .fee-card-name { font-weight: 700; font-size: 14px; }
-.fee-card-period { font-size: 11.5px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
+.fee-card-period { font-size: 12px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
 .fee-card-breakdown { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
 .fee-card-total { font-weight: 700; color: var(--ink); }
 
-.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 14px; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 14px; }
 .panel-warning { background: #FBF3DE; border-color: #EFDBA0; }
 .panel-title { display: flex; align-items: center; gap: 6px; font-weight: 700; margin-bottom: 10px; font-family: 'Noto Serif TC', serif; }
 .orphan-row { background: white; border: 1px solid #EFDBA0; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
@@ -3581,20 +3541,13 @@ const CSS = `
 .student-inactive-date { font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
 .student-input { flex: 1 1 120px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; background: white; color: var(--ink); }
 .school-add-row { display: flex; align-items: center; gap: 6px; flex: 1 1 200px; }
-.trial-check { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; flex-shrink: 0; }
+.trial-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; flex-shrink: 0; }
 
 .rule-list { display: flex; flex-direction: column; gap: 6px; }
-.rule-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--brass-soft); border: 1px solid #E3D2A9; border-radius: 9px; padding: 8px 12px; font-size: 12.5px; flex-wrap: wrap; }
+.rule-chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--brass-soft); border: 1px solid #E3D2A9; border-radius: 10px; padding: 8px 12px; font-size: 13px; flex-wrap: wrap; }
 .rule-chip-past { background: #F1F1EE; border-color: var(--line); color: var(--ink-soft); }
-.hint-block { margin-top: 10px; font-size: 11.5px; color: var(--ink-soft); background: #F1F1EE; border-radius: 8px; padding: 8px 10px; line-height: 1.6; }
+.hint-block { margin-top: 10px; font-size: 12px; color: var(--ink-soft); background: #F1F1EE; border-radius: 8px; padding: 8px 10px; line-height: 1.6; }
 /* TeachingRecord2 visual refresh: learning handbook / sticky-note style */
-:root {
-  --paper: #F7F8FC; --ink: #243047; --ink-soft: #718096; --brass: #F2A65A;
-  --brass-soft: #FFF0D8; --line: #E5E9F2; --card: #FFFFFF;
-  --coral: #F27D72; --teal: #41B3A3; --blue: #6177E8; --purple: #8B78D8;
-  --shadow-soft: 0 12px 32px rgba(49, 62, 92, 0.08);
-  --shadow-lift: 0 18px 38px rgba(49, 62, 92, 0.14);
-}
 body { margin: 0; background: var(--paper); }
 button, input, select, textarea { transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, transform 160ms ease; }
 button:active { transform: scale(.98); }
@@ -3604,15 +3557,13 @@ button:active { transform: scale(.98); }
 .brand { gap: 10px; min-width: 180px; }
 .brand-mark { width: 40px; height: 40px; border-radius: 12px 12px 12px 4px; padding: 2px; object-fit: contain; background: linear-gradient(145deg, var(--coral), #F7B36D); box-shadow: 0 8px 15px rgba(242,125,114,.26); transform: rotate(-5deg); }
 .brand-text { color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 17px; letter-spacing: .04em; }
-.brand-caption { color: #9CA8BA; font-size: 10px; letter-spacing: .16em; margin-top: 2px; }
+.brand-caption { color: #9CA8BA; font-size: 11px; letter-spacing: .16em; margin-top: 2px; }
 .topnav-middle { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 150px; color: #99A4B6; font-size: 12px; }
 .topnav-breadcrumb { color: var(--ink); font-weight: 700; }
 .topnav-dot, .kicker-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); display: inline-block; box-shadow: 0 0 0 4px rgba(65,179,163,.12); }
 .nav-pills { gap: 6px; }
 .nav-pill { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 9px 13px; color: #7B8799; }
 .nav-pill.pill-active { background: #EEF0FF; color: var(--blue); }
-.pill { border-color: transparent; background: #F6F8FC; font-weight: 700; }
-.pill.pill-active { background: #6177E8; color: #FFFFFF; border-color: #6177E8; box-shadow: 0 6px 14px rgba(97,119,232,.22); }
 .utility-pill { padding: 8px 11px; color: #8290A4; }
 .pill-warning { background: #FFF0D8 !important; color: #B8791B !important; }
 .view-pad { position: relative; z-index: 1; max-width: 1240px; padding: 28px clamp(18px, 4vw, 48px) 56px; }
@@ -3632,19 +3583,20 @@ button:active { transform: scale(.98); }
 .metric-card-coral { background: #FFE8E2; }.metric-card-teal { background: #DFF6F0; }.metric-card-blue { background: #E9EDFF; }
 .metric-note { display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px dashed #CBD5E5; color: var(--blue); }
 .metric-note div { display: flex; flex-direction: column; gap: 4px; }.metric-note strong { color: var(--ink); font-size: 13px; }.metric-note span { color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
-.calendar-shell { border: 0; border-radius: 24px; padding: 20px; box-shadow: var(--shadow-soft); }
-.calendar-header { margin-bottom: 18px; }.calendar-title-group { gap: 8px; }.calendar-kicker { color: #9CA8BA; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; margin-right: 6px; }.calendar-title { color: var(--ink); font-size: 19px; letter-spacing: -.02em; }
-.calendar-header-actions { gap: 9px; }.calendar-view-switch { display: inline-flex; padding: 3px; border-radius: 10px; background: #F0F3F9; }.calendar-view-switch button { border: 0; border-radius: 7px; padding: 6px 10px; color: #8792A2; background: transparent; font: 700 11px 'Noto Sans TC', sans-serif; cursor: pointer; }.calendar-view-switch button.active { color: var(--blue); background: white; box-shadow: 0 3px 8px rgba(49,62,92,.12); }
-.calendar-weekdays { color: #9CA8BA; font-weight: 700; }.calendar-wd:first-child, .calendar-wd:last-child { color: var(--coral); }.calendar-grid { gap: 6px; }.calendar-cell { min-height: 98px; padding: 8px 6px 6px; border-radius: 14px; background: #FBFCFE; border: 1px solid #F0F2F7; }.calendar-cell:hover { background: #F4F6FF; border-color: #DCE2FA; transform: translateY(-1px); }.calendar-cell-selected { background: #EEF0FF !important; border-color: #98A7F1 !important; box-shadow: inset 0 0 0 1px #98A7F1; }.calendar-cell-holiday { background: #FFF4F1; color: #D9675D; }.calendar-cell-today { box-shadow: 0 0 0 2px #F4B26E, 0 5px 12px rgba(242,166,90,.12); border-color: #F4B26E; }.calendar-cell-topline { display: flex; align-items: center; justify-content: center; gap: 5px; }.calendar-cell-num { color: var(--ink); font-size: 13px; font-weight: 700; }.today-badge { padding: 2px 4px; border-radius: 5px; color: #FFFFFF; background: var(--coral); font-size: 8px; font-weight: 700; }.calendar-cell-dots { margin-top: 4px; }.dot { width: 6px; height: 6px; }.calendar-event-label { padding: 3px 4px; border-radius: 5px; font-size: 9px; font-weight: 700; }.calendar-event-label-range { background: #F1EEFF !important; }.calendar-event-more { font-weight: 700; }
-.week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: start; }.week-column { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 0; min-height: 310px; padding: 0; border: 1px solid #E9EDF5; border-radius: 15px; background: #FBFCFE; overflow: hidden; text-align: left; cursor: pointer; }.week-column:hover { border-color: #B9C5F7; transform: translateY(-2px); }.week-column-selected { border: 2px solid #8E9FF0; background: #F2F4FF; }.week-column-today { box-shadow: 0 0 0 2px #F4B26E; }.week-column-head { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 11px 6px 10px; color: #8490A3; background: #F1F4FA; font-size: 11px; }.week-column-head strong { color: var(--ink); font: 700 16px 'IBM Plex Mono', monospace; }.week-column-head em { color: var(--coral); font-size: 9px; font-style: normal; font-weight: 700; }.week-column-body { display: flex; flex: 1; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 7px; padding: 10px; }.week-class, .week-event { display: flex; flex-direction: column; gap: 3px; padding: 8px 8px 8px 10px; border-left: 4px solid; border-radius: 7px; background: #FFFFFF; box-shadow: 0 4px 9px rgba(49,62,92,.06); }.week-class b, .week-event b { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.week-class small, .week-event small { overflow: hidden; color: var(--ink-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.week-empty { padding: 0 4px 12px; color: #B4BECC; font-size: 11px; text-align: center; }
+.calendar-shell { border: 0; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-soft); }
+.calendar-header { margin-bottom: 18px; }.calendar-title-group { gap: 8px; }.calendar-kicker { color: #9CA8BA; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; margin-right: 6px; }.calendar-title { color: var(--ink); font-size: 19px; letter-spacing: -.02em; }
+.calendar-header-actions { gap: 9px; }.calendar-view-switch { display: inline-flex; padding: 3px; border-radius: 10px; background: #F0F3F9; }.calendar-view-switch button { border: 0; border-radius: 6px; padding: 6px 10px; color: #8792A2; background: transparent; font: 700 11px 'Noto Sans TC', sans-serif; cursor: pointer; }.calendar-view-switch button.active { color: var(--blue); background: white; box-shadow: 0 3px 8px rgba(49,62,92,.12); }
+.calendar-weekdays { color: #9CA8BA; font-weight: 700; }.calendar-wd:first-child, .calendar-wd:last-child { color: var(--coral); }.calendar-grid { gap: 6px; }.calendar-cell { min-height: 98px; padding: 8px 6px 6px; border-radius: 14px; background: #FBFCFE; border: 1px solid #F0F2F7; }.calendar-cell:hover { background: #F4F6FF; border-color: #DCE2FA; transform: translateY(-1px); }.calendar-cell-selected { background: #EEF0FF !important; border-color: #98A7F1 !important; box-shadow: inset 0 0 0 1px #98A7F1; }.calendar-cell-holiday { background: #FFF4F1; color: #D9675D; }.calendar-cell-today { box-shadow: 0 0 0 2px #F4B26E, 0 5px 12px rgba(242,166,90,.12); border-color: #F4B26E; }.calendar-cell-topline { display: flex; align-items: center; justify-content: center; gap: 5px; }.calendar-cell-num { color: var(--ink); font-size: 13px; font-weight: 700; }.today-badge { padding: 2px 4px; border-radius: 6px; color: #FFFFFF; background: var(--coral); font-size: 11px; font-weight: 700; }.calendar-cell-dots { margin-top: 4px; }.dot { width: 6px; height: 6px; }.calendar-event-label { padding: 3px 4px; border-radius: 6px; font-size: 11px; font-weight: 700; }.calendar-event-label-range { background: #F1EEFF !important; }.calendar-event-more { font-weight: 700; }
+.week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: start; }.week-column { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 0; min-height: 310px; padding: 0; border: 1px solid #E9EDF5; border-radius: 14px; background: #FBFCFE; overflow: hidden; text-align: left; cursor: pointer; }.week-column:hover { border-color: #B9C5F7; transform: translateY(-2px); }.week-column-selected { border: 2px solid #8E9FF0; background: #F2F4FF; }.week-column-today { box-shadow: 0 0 0 2px #F4B26E; }.week-column-head { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 11px 6px 10px; color: #8490A3; background: #F1F4FA; font-size: 11px; }.week-column-head strong { color: var(--ink); font: 700 16px 'IBM Plex Mono', monospace; }.week-column-head em { color: var(--coral); font-size: 11px; font-style: normal; font-weight: 700; }.week-column-body { display: flex; flex: 1; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 7px; padding: 10px; }.week-class, .week-event { display: flex; flex-direction: column; gap: 3px; padding: 8px 8px 8px 10px; border-left: 4px solid; border-radius: 6px; background: #FFFFFF; box-shadow: 0 4px 9px rgba(49,62,92,.06); }.week-class b, .week-event b { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.week-class small, .week-event small { overflow: hidden; color: var(--ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.week-empty { padding: 0 4px 12px; color: #B4BECC; font-size: 11px; text-align: center; }
 .section-heading-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 24px 2px 9px; }.section-heading-row .section-label { margin: 0; }.section-count { padding: 5px 9px; border-radius: 999px; color: var(--blue); background: #EEF0FF; font: 700 10px 'IBM Plex Mono', monospace; }.empty-note-card { padding: 18px; border-radius: 14px; background: rgba(255,255,255,.72); border: 1px dashed #D7DFEC; }
 .class-card { position: relative; overflow: hidden; border: 0; box-shadow: var(--shadow-soft); transition: transform 180ms ease, box-shadow 180ms ease; }.class-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }.class-card-vivid { min-height: 76px; padding: 16px 18px 16px 22px; background: #FFFFFF; }.class-card-ribbon { position: absolute; inset: 0 auto 0 0; width: 6px; }.class-card-title { color: var(--ink); }.class-card-sub { color: var(--ink-soft); }.class-card-time { color: #E28A46; }
-.calendar-events-panel, .form-card, .panel, .fee-card { border: 0; box-shadow: var(--shadow-soft); }.section-label, .form-title, .panel-title { color: var(--ink); }.section-label { font-size: 17px; }.btn-primary { background: var(--blue); box-shadow: 0 7px 13px rgba(97,119,232,.18); }.btn-primary:hover { background: #5268D7; transform: translateY(-1px); }.btn-ghost { background: #FFFFFF; border-color: #DCE2ED; color: #748197; }.btn-ghost:hover, .icon-btn:hover { border-color: #AAB7EF; color: var(--blue); background: #F5F6FF; }.icon-btn { border-color: #E0E6F0; background: #FFFFFF; }
+.calendar-events-panel, .form-card, .panel, .fee-card { border: 0; box-shadow: var(--shadow-soft); }.section-label, .form-title, .panel-title { color: var(--ink); }.section-label { font-size: 17px; }.btn-ghost:hover, .icon-btn:hover { border-color: #AAB7EF; color: var(--blue); background: #F5F6FF; }.icon-btn { border-color: #E0E6F0; background: #FFFFFF; }
 .form-card, .calendar-events-panel { border-radius: 18px; }.field input, .field select, .student-input { border-color: #E1E6F0; }.field input:focus, .field select:focus, .student-input:focus { outline: none; border-color: #91A0EE; box-shadow: 0 0 0 4px rgba(97,119,232,.12); }
 .toast { background: var(--ink); box-shadow: var(--shadow-lift); }.backup-warning { background: #FFF1D9; border-color: #F5D39B; }.detail-title { color: var(--ink); }.tab-active { color: var(--blue); border-bottom-color: var(--blue); }
 @media (max-width: 860px) { .topnav { gap: 12px; }.topnav-middle { order: 3; flex-basis: 100%; }.today-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.metric-note { grid-column: span 2; } }
 @media (max-width: 720px) { .view-pad { padding: 18px 12px 42px; }.today-hero { align-items: flex-start; padding: 23px 20px; }.hero-sticker { width: 86px; height: 86px; }.hero-sticker span { font-size: 15px; }.hero-copy p { font-size: 13px; }.calendar-shell { padding: 12px; }.calendar-header { align-items: flex-start; flex-direction: column; }.calendar-header-actions { width: 100%; flex-wrap: wrap; }.week-grid { overflow-x: auto; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding-bottom: 6px; }.week-column { min-height: 260px; }.today-metrics { gap: 8px; }.metric-card { min-height: 92px; padding: 13px; }.metric-card strong { font-size: 26px; } }
-.lesson-videos-view{max-width:1120px}.lesson-videos-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.lesson-videos-toolbar label{display:grid;gap:5px;color:var(--ink-soft);font-size:12px;font-weight:700}.lesson-videos-toolbar input,.lesson-videos-toolbar select{min-height:36px;border:1px solid var(--line);border-radius:9px;background:#FFF;color:var(--ink);padding:7px 10px;font:inherit;font-size:13px}.lesson-video-list{display:grid;gap:12px}.lesson-video-card{background:#FFF;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-soft)}.lesson-video-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.lesson-video-card-head strong{display:block;color:var(--ink);font:700 16px 'IBM Plex Mono',monospace}.lesson-video-card-head span:not(.tag){display:block;color:var(--ink-soft);font-size:13px;margin-top:4px}.lesson-video-students{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0;color:var(--ink-soft);font-size:13px}.lesson-video-student{padding:5px 8px;border-radius:8px;background:#FFF1F0;color:#B34C47;font-weight:700}.lesson-video-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lesson-video-form input{flex:1 1 360px;min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px}.lesson-video-form a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}.lesson-videos-message{margin:10px 0}
+.lesson-videos-view{max-width:1120px}.lesson-videos-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.lesson-videos-toolbar label{display:grid;gap:5px;color:var(--ink-soft);font-size:12px;font-weight:700}.lesson-videos-toolbar input,.lesson-videos-toolbar select{min-height:36px;border:1px solid var(--line);border-radius:10px;background:#FFF;color:var(--ink);padding:7px 10px;font:inherit;font-size:13px}.lesson-video-list{display:grid;gap:12px}.lesson-video-card{background:#FFF;border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow-soft)}.lesson-video-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.lesson-video-card-head strong{display:block;color:var(--ink);font:700 16px 'IBM Plex Mono',monospace}.lesson-video-card-head span:not(.tag){display:block;color:var(--ink-soft);font-size:13px;margin-top:4px}.lesson-video-students{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0;color:var(--ink-soft);font-size:13px}.lesson-video-student{padding:5px 8px;border-radius:8px;background:#FFF1F0;color:#B34C47;font-weight:700}.lesson-video-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lesson-video-form input{flex:1 1 360px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:13px}.lesson-video-form a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}.lesson-videos-message{margin:10px 0}
 @media (max-width:720px){.lesson-video-card{padding:13px}.lesson-video-card-head{flex-direction:column}.lesson-video-form input{flex-basis:100%}.lesson-video-form .btn-primary{width:100%}}
+${THEME_COMPONENTS_CSS}
 
 `;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { GoogleAuthProvider, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth } from "./firebase";
 import ParentPortal, { isAdminUser } from "./ParentPortal.jsx";
+import { THEME_CSS } from "./theme.js";
 
 const TEACHER_EMAIL = "yzhsage@gmail.com";
 const googleProvider = new GoogleAuthProvider();
@@ -76,5 +77,17 @@ export default function AuthGate({ children }) {
 }
 
 const AUTH_CSS = `
-.auth-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F1EA;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;padding:20px}.auth-card{width:100%;max-width:360px;background:#FFF;border:1px solid #E4DFD3;border-radius:14px;padding:28px 24px;display:flex;flex-direction:column;gap:12px;box-shadow:0 2px 10px rgba(0,0,0,.04)}.auth-title{font-family:"Noto Serif TC",serif;font-weight:700;font-size:19px;text-align:center;margin-bottom:6px;color:#2A2A28}.auth-input{width:100%;box-sizing:border-box;border:1px solid #D9D9D5;border-radius:9px;padding:10px 12px;font-size:15px;font-family:inherit;margin-bottom:8px}.auth-error{color:#B23A34;font-size:12.5px;margin:8px 0}.auth-btn,.google-btn,.portal-email-btn{border:0;border-radius:9px;padding:10px 12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;width:100%}.auth-btn{background:#B8863B;color:#FFF}.google-btn{background:#FFF;color:#2A2A28;border:1px solid #C9C9C4}.portal-email-btn{background:#E56D5A;color:#FFF}.auth-btn:disabled,.google-btn:disabled,.portal-email-btn:disabled{opacity:.6;cursor:default}.auth-divider{display:flex;align-items:center;gap:8px;color:#8A8D91;font-size:12px;margin:6px 0}.auth-divider:before,.auth-divider:after{content:"";height:1px;background:#E8E5DE;flex:1}.auth-mode-tabs{display:flex;gap:6px}.auth-mode-tabs button{flex:1;border:1px solid #E2DED6;background:#FFF;border-radius:8px;padding:7px;color:#8A8D91;cursor:pointer}.auth-mode-tabs button.active{background:#FFF0EC;border-color:#E56D5A;color:#C45142;font-weight:800}.auth-loading{color:#71757A;font-size:14px}
+${THEME_CSS}
+.auth-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--paper);color:var(--ink);font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,sans-serif;padding:20px}
+.auth-shell *{box-sizing:border-box}
+.auth-card{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 24px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-soft)}
+.auth-title{font-family:'Noto Serif TC',serif;font-weight:700;font-size:19px;text-align:center;margin-bottom:6px;color:var(--ink)}
+.auth-input{width:100%;margin-bottom:8px}
+.auth-error{color:var(--danger);font-size:13px;margin:8px 0}
+.auth-divider{display:flex;align-items:center;gap:8px;color:var(--ink-soft);font-size:12px;margin:6px 0}
+.auth-divider:before,.auth-divider:after{content:"";height:1px;background:var(--line);flex:1}
+.auth-mode-tabs{display:flex;gap:6px}
+.auth-mode-tabs button{flex:1;min-height:34px;border:1px solid var(--line);background:var(--card);border-radius:8px;color:var(--ink-soft);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.auth-mode-tabs button.active{background:var(--blue-soft);border-color:var(--blue);color:var(--blue-deep);font-weight:700}
+.auth-loading{color:var(--ink-soft);font-size:14px}
 `;

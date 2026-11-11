@@ -6,6 +6,8 @@ import { invalidateRecordRoots, loadRecordRoots, onStudentFirstSaved } from "./s
 import { schedulePortalPublish, subscribePublishStatus } from "./portalPublish";
 import { accountStudentIds, buildAllPortalData, buildStudentCard, isStudentStopped } from "./studentRecords.js";
 import StudentCard from "./StudentCard.jsx";
+import { fmtDate, fmtStamp } from "./dateFormat.js";
+import { friendlyError } from "./friendlyError.js";
 
 /* 學生總覽: every student in one list. Clicking a student opens the same card
    the family sees, plus a teacher-only box for 8-digit login codes. */
@@ -17,22 +19,7 @@ function makeCode() {
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
-function fmtStamp(iso) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
-function fmtShortDate(value) {
-  const [, m, d] = String(value || "").split("-");
-  return m && d ? `${Number(m)}/${Number(d)}` : "";
-}
-
-function friendly(error) {
-  const text = String(error?.message || error || "");
-  if (/permission/i.test(text)) return "沒有讀取權限（Firebase 規則可能還沒更新）";
-  return text || "未知錯誤";
-}
+function friendly(error) { return friendlyError(error); }
 
 function usePublishStatus() {
   const [status, setStatus] = useState(null);
@@ -52,7 +39,7 @@ function PublishStatusLine() {
   return (
     <div className={`so-publish${tone ? ` so-publish-${tone}` : ""}`} role="status">
       <span>{text}</span>
-      {(status.state === "error" || status.state === "skipped") && <button type="button" onClick={() => schedulePortalPublish(0)}>立即重試</button>}
+      {(status.state === "error" || status.state === "skipped") && <button type="button" className="btn-ghost btn-xs" onClick={() => schedulePortalPublish(0)}>立即重試</button>}
     </div>
   );
 }
@@ -61,6 +48,7 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState("");
+  const [confirmCode, setConfirmCode] = useState("");
 
   const studentInvites = Object.values(invites || {})
     .filter((invite) => invite?.studentId === studentId && invite.code)
@@ -85,7 +73,7 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
   }
 
   async function revokeInvite(code) {
-    if (!window.confirm(`停用認證碼 ${code}？用這組碼綁定的帳戶會立刻看不到 ${studentName} 的資料。`)) return;
+    setConfirmCode("");
     setBusy(true); setMessage("");
     try {
       await update(ref(db, `portalInvites/${code}`), { revoked: true, revokedAt: new Date().toISOString() });
@@ -97,14 +85,14 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
 
   async function copy(code) {
     try { await navigator.clipboard.writeText(code); setCopied(code); setTimeout(() => setCopied(""), 1500); }
-    catch { window.prompt("請複製這組認證碼", code); }
+    catch { setCopied(`fail:${code}`); setTimeout(() => setCopied(""), 3000); } // the code is selectable on screen
   }
 
   return (
     <section className="so-accounts">
       <div className="so-accounts-head">
         <div><div className="so-kicker">只有你看得到</div><h3>家長／學生登入</h3></div>
-        <button type="button" className="so-primary" disabled={busy || !!portalError} onClick={createInvite}>建立 8 碼認證碼</button>
+        <button type="button" className="btn-primary" disabled={busy || !!portalError} onClick={createInvite}>建立 8 碼認證碼</button>
       </div>
       <p className="so-hint">家長或學生用自己的 Google 或電子郵件登入，第一次輸入認證碼後，之後登入就會直接看到上面這張卡片。一組認證碼只能綁定一個帳戶。</p>
       {portalError && <div className="so-alert">讀不到認證碼清單：{portalError}。請到 Firebase 後台貼上新版規則並按「發布」。</div>}
@@ -120,10 +108,19 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
                 return (
                   <li key={invite.code} className={invite.revoked ? "is-revoked" : ""}>
                     <code>{invite.code}</code>
-                    <span className="so-code-state">{state}</span>
+                    <span className="so-code-state">{confirmCode === invite.code ? `停用後，用這組碼綁定的帳戶會立刻看不到 ${studentName} 的資料。` : state}</span>
                     <span className="so-code-actions">
-                      {!invite.revoked && !invite.claimedBy && <button type="button" onClick={() => copy(invite.code)}>{copied === invite.code ? "已複製" : "複製"}</button>}
-                      {!invite.revoked && <button type="button" disabled={busy} onClick={() => revokeInvite(invite.code)}>停用</button>}
+                      {confirmCode === invite.code ? (
+                        <>
+                          <button type="button" className="btn-danger btn-xs" disabled={busy} onClick={() => revokeInvite(invite.code)}>確定停用</button>
+                          <button type="button" className="btn-ghost btn-xs" onClick={() => setConfirmCode("")}>保留</button>
+                        </>
+                      ) : (
+                        <>
+                          {!invite.revoked && !invite.claimedBy && <button type="button" className="btn-ghost btn-xs" onClick={() => copy(invite.code)}>{copied === invite.code ? "已複製" : copied === `fail:${invite.code}` ? "請手動選取" : "複製"}</button>}
+                          {!invite.revoked && <button type="button" className="btn-ghost btn-xs" disabled={busy} onClick={() => setConfirmCode(invite.code)}>停用</button>}
+                        </>
+                      )}
                     </span>
                   </li>
                 );
@@ -263,7 +260,7 @@ export default function StudentOverview() {
   if (records.status === "error" && !records.roots) {
     return (
       <div className="view-pad">
-        <div className="so-error-card"><h3>學生資料沒有讀到</h3><p>{records.error}。你的資料沒有遺失，請再試一次。</p><button type="button" className="so-primary" onClick={() => load(true)}>重新讀取</button></div>
+        <div className="so-error-card"><h3>學生資料沒有讀到</h3><p>{records.error}。你的資料沒有遺失，請再試一次。</p><button type="button" className="btn-primary" onClick={() => load(true)}>重新讀取</button></div>
         <style>{OVERVIEW_CSS}</style>
       </div>
     );
@@ -277,10 +274,10 @@ export default function StudentOverview() {
         <div className="so-detail-bar">
           <button type="button" className="so-back" onClick={() => setSelectedId(null)}>← 回學生總覽</button>
           <div className="so-detail-nav">
-            <button type="button" className={parentPreview ? "so-preview-toggle active" : "so-preview-toggle"} onClick={() => setParentPreview((value) => !value)}>{parentPreview ? "切回教師畫面" : "預覽家長畫面"}</button>
+            <button type="button" className={parentPreview ? "btn-ghost btn-sm is-on" : "btn-ghost btn-sm"} onClick={() => setParentPreview((value) => !value)}>{parentPreview ? "切回教師畫面" : "預覽家長畫面"}</button>
             {selectedIndex >= 0 && <span className="so-count">{selectedIndex + 1} / {visible.length}</span>}
-            <button type="button" disabled={!prev} onClick={() => prev && setSelectedId(prev.id)}>上一位</button>
-            <button type="button" disabled={!next} onClick={() => next && setSelectedId(next.id)}>下一位</button>
+            <button type="button" className="btn-ghost btn-sm" disabled={!prev} onClick={() => prev && setSelectedId(prev.id)}>上一位</button>
+            <button type="button" className="btn-ghost btn-sm" disabled={!next} onClick={() => next && setSelectedId(next.id)}>下一位</button>
           </div>
         </div>
         <div className="so-preview-note">{parentPreview ? "目前是家長畫面預覽：補課影片與出缺勤預設顯示近兩個月。" : "目前是教師畫面：可查看完整歷史紀錄與帳戶管理功能。"}</div>
@@ -302,7 +299,7 @@ export default function StudentOverview() {
           <h2 className="so-title">學生總覽</h2>
           <div className="so-subtitle">共 {rows.filter((row) => !row.stopped).length} 位在學學生{rows.some((row) => row.stopped) ? `，${rows.filter((row) => row.stopped).length} 位已停課` : ""}。點學生可以看他的完整紀錄。</div>
         </div>
-        <div className="so-head-actions"><button type="button" className="so-primary" disabled={bulkCodeBusy || !!portal.error} onClick={createMissingInvites}>{bulkCodeBusy ? "自動建立中…" : "自動建立全部認證碼"}</button><button type="button" className="so-ghost" disabled={records.status === "refreshing"} onClick={() => load(true)}>{records.status === "refreshing" ? "讀取中…" : "重新讀取"}</button></div>
+        <div className="so-head-actions"><button type="button" className="btn-primary" disabled={bulkCodeBusy || !!portal.error} onClick={createMissingInvites}>{bulkCodeBusy ? "自動建立中…" : "自動建立全部認證碼"}</button><button type="button" className="btn-ghost" disabled={records.status === "refreshing"} onClick={() => load(true)}>{records.status === "refreshing" ? "讀取中…" : "重新讀取"}</button></div>
       </div>
       <PublishStatusLine />
       {bulkCodeMessage && <div className="so-note" role="status">{bulkCodeMessage}</div>}
@@ -328,7 +325,7 @@ export default function StudentOverview() {
                 <span className="so-row-classes">{classes.map((cls) => <i key={cls.id} className={cls.stopped ? "is-stopped" : ""}>{cls.name}</i>)}</span>
                 <span className="num" data-label="出席率"><b className={stats.attendanceRate !== null && stats.attendanceRate < 80 ? "is-low" : ""}>{stats.attendanceRate === null ? "—" : `${stats.attendanceRate}%`}</b></span>
                 <span className="num" data-label="平均"><b>{stats.scoreAverage === null ? "—" : stats.scoreAverage}</b></span>
-                <span className="so-row-last" data-label="最近">{last ? `${fmtShortDate(last.date)} ${last.statuses.join("、")}` : "—"}</span>
+                <span className="so-row-last" data-label="最近">{last ? `${fmtDate(last.date, { year: false, weekday: false })} ${last.statuses.join("、")}` : "—"}</span>
                 <span className="num" data-label="家長">{row.bound ? `${row.bound} 個` : <span className="so-dim">未綁定</span>}</span>
               </button>
             );
@@ -347,54 +344,45 @@ const OVERVIEW_CSS = `
 .so-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .so-title{font-family:'Noto Serif TC',serif;font-size:24px;margin:0}
 .so-subtitle{color:var(--ink-soft);font-size:13px;margin-top:4px}
-.so-primary{border:0;border-radius:9px;padding:9px 14px;background:var(--ink);color:#FFF;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
-.so-primary:disabled{opacity:.45;cursor:default}
-.so-ghost{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:8px 13px;font-size:13px;color:var(--ink-soft);cursor:pointer;font-family:inherit}
-.so-publish{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-soft);background:#F1EEE6;border-radius:10px;padding:8px 12px;margin-bottom:12px}
-.so-publish button{border:0;background:var(--ink);color:#FFF;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
-.so-publish-warn{background:#FBF3DE;color:#7A5A10}.so-publish-bad{background:#FBEDEA;color:#8C332E}
-.so-alert{background:#FBEDEA;border:1px solid #E8B8B0;color:#8C332E;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0;line-height:1.6}
-.so-note{background:#EEF5F2;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0}
+.so-publish{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--ink-soft);background:#EEF1F8;border-radius:10px;padding:8px 12px;margin-bottom:12px}
+.so-publish-warn{background:#FFF1D9;color:#8A5A10}.so-publish-bad{background:#FBEAE9;color:#8C332E}
+.so-alert{background:#FBEAE9;border:1px solid #F0C6C3;color:#8C332E;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0;line-height:1.6}
+.so-note{background:#E8F6F3;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0}
 .so-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-.so-search{flex:1 1 220px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14px;font-family:inherit;background:var(--card)}
-.so-select{border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:14px;font-family:inherit;background:var(--card);max-width:100%}
+.so-search{flex:1 1 220px;min-width:0}
+.so-select{max-width:100%}
 .so-check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft);white-space:nowrap}
 .so-list{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .so-list-head,.so-row{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(140px,1.6fr) 80px 80px minmax(110px,1fr) 80px;gap:12px;align-items:center;padding:11px 16px}
-.so-list-head{font-size:12px;color:var(--ink-soft);font-weight:700;border-bottom:1px solid var(--line);background:#FBFAF6}
-.so-row{width:100%;border:0;border-bottom:1px solid #F0EBE1;background:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer;font-size:14px}
+.so-list-head{font-size:12px;color:var(--ink-soft);font-weight:700;border-bottom:1px solid var(--line);background:#F7F8FC}
+.so-row{width:100%;border:0;border-bottom:1px solid #EEF1F7;background:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer;font-size:14px}
 .so-row:last-child{border-bottom:0}
-.so-row:hover{background:#FBF7EE}
+.so-row:hover{background:#F6F8FC}
 .so-row.is-stopped{color:var(--ink-soft)}
 .so-row-name strong{font-size:15px}.so-row-name em{font-style:normal;font-size:11px;background:#EEEEEC;color:#71757A;border-radius:999px;padding:1px 7px;margin-left:6px}.so-row-name small{display:block;font-size:12px;color:var(--ink-soft);margin-top:2px}
-.so-row-classes{display:flex;flex-wrap:wrap;gap:4px}.so-row-classes i{font-style:normal;font-size:12px;background:var(--brass-soft);border-radius:999px;padding:2px 8px}.so-row-classes i.is-stopped{background:#EEEEEC;color:#71757A;text-decoration:line-through}
+.so-row-classes{display:flex;flex-wrap:wrap;gap:4px}.so-row-classes i{font-style:normal;font-size:12px;background:var(--blue-soft);border-radius:999px;padding:2px 8px}.so-row-classes i.is-stopped{background:#EEEEEC;color:#71757A;text-decoration:line-through}
 .so-list .num{text-align:right;font-family:'IBM Plex Mono',monospace}.so-list .num b{font-weight:600}.so-list b.is-low{color:#B23A34}
 .so-row-last{font-size:13px;color:var(--ink-soft)}.so-dim{color:#A3A8AD;font-family:'Noto Sans TC',sans-serif;font-size:12px}
 .so-detail{max-width:980px;margin:0 auto}
 .so-detail-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
-.so-back{border:0;background:none;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;padding:6px 0;font-family:inherit}
 .so-detail-nav{display:flex;align-items:center;gap:6px}
-.so-detail-nav button{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--ink)}
-.so-detail-nav button.so-preview-toggle{border-color:#6177E8;color:#5268D7;background:#EEF0FF;font-weight:700}
-.so-detail-nav button.so-preview-toggle.active{border-color:#41B3A3;color:#237C70;background:#E1F7F2}
-.so-detail-nav button:disabled{opacity:.4;cursor:default}
 .so-count{font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-right:4px}
-.so-preview-note{font-size:12.5px;color:var(--ink-soft);margin-bottom:12px}
-.so-accounts{border:1px dashed #D5C29B;background:#FFFCF5;border-radius:16px;padding:18px}
+.so-preview-note{font-size:13px;color:var(--ink-soft);margin-bottom:12px}
+.so-accounts{border:1px dashed #CBD5E5;background:#FFFFFF;border-radius:18px;padding:18px}
 .so-accounts-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.so-kicker{font-size:11px;color:var(--brass);font-weight:700;letter-spacing:.06em}
+.so-kicker{font-size:11px;color:var(--blue);font-weight:700;letter-spacing:.06em}
 .so-accounts h3{margin:2px 0 0;font-family:'Noto Serif TC',serif;font-size:17px}
 .so-accounts h4{font-size:13px;margin:14px 0 6px;color:var(--ink-soft)}
-.so-hint{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:8px 0 0}
+.so-hint{font-size:13px;color:var(--ink-soft);line-height:1.6;margin:8px 0 0}
 .so-muted{font-size:13px;color:var(--ink-soft);margin:0}
 .so-accounts-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
 .so-codes,.so-bound{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .so-codes li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
 .so-codes li.is-revoked{opacity:.55}.so-codes li.is-revoked code{text-decoration:line-through}
-.so-codes code{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;letter-spacing:.08em}
+.so-codes code{user-select:all;font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;letter-spacing:.08em}
 .so-code-state{font-size:12px;color:var(--ink-soft);flex:1;min-width:80px;overflow-wrap:anywhere}
 .so-code-actions{display:flex;gap:4px}
-.so-code-actions button{border:1px solid var(--line);background:var(--paper);border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;font-family:inherit}
 .so-bound li{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;overflow-wrap:anywhere}
 @media(max-width:760px){.so-list-head{display:none}.so-row{grid-template-columns:1fr auto;gap:4px 10px;padding:12px 14px}.so-row-classes{grid-column:1/-1;order:3}.so-row .num[data-label="出席率"]{grid-row:1;grid-column:2}.so-row .num[data-label="平均"],.so-row .num[data-label="家長"],.so-row-last{display:none}.so-accounts-grid{grid-template-columns:1fr}}
+.so-head-actions{display:flex;flex-wrap:wrap;gap:8px}
 `;
