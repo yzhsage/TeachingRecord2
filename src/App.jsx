@@ -16,6 +16,7 @@ import { startPortalAutoPublish } from "./portalPublish";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
 import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
+import { DateField, TimeField } from "./DateTimeFields.jsx";
 import { FONT_IMPORT_CSS, THEME_VARS_CSS, THEME_COMPONENTS_CSS, STATUS_STYLE, CHART_THEME } from "./theme.js";
 import { WEEKDAYS as WEEKDAY_FULL, fmtDate, fmtDateShort, fmtDateRange, fmtTimeRange, ruleWeekLabel, twoCalendarMonthsAgo, weekdayLabel } from "./dateFormat.js";
 import { formatStudentSchoolGroup, isStudentStoppedOnDate, mergeStudentIndex, removeStudentFromRecords, removeStudentFromStudentIndex, studentDisplay, studentStartDate, validateStudentIndex } from "./students";
@@ -1023,7 +1024,7 @@ function LessonVideosView({ classes, studentIndex }) {
 
   return <div className="view-pad lesson-videos-view">
     <div className="section-head"><div><h2 className="page-title">上課影片</h2><div className="section-hint">列出指定期間內有請假或曠課的班級紀錄；影片連結沿用原上課日的「當日錄影連結」。</div></div><span className="tag tag-muted">共 {rows.length} 班日紀錄</span></div>
-    <div className="lesson-videos-toolbar"><label>開始日期<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>結束日期<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label>班級<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="all">全部班級</option>{classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label></div>
+    <div className="lesson-videos-toolbar"><label>開始日期<DateField value={from} onChange={setFrom} clearable placeholder="不限開始日" aria-label="開始日期" /></label><label>結束日期<DateField value={to} onChange={setTo} clearable placeholder="不限結束日" aria-label="結束日期" /></label><label>班級<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="all">全部班級</option>{classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label></div>
     {message && <div className="backup-warning lesson-videos-message">{message}</div>}
     {status === "loading" && <div className="empty-note">正在讀取缺課紀錄…</div>}
     {status === "error" && <div className="load-error-banner">讀取上課影片清單失敗，請重新整理頁面後再試。</div>}
@@ -1283,8 +1284,8 @@ function CalendarEventForm({ date, initialEvent, knownSchools, onCancel, onCreat
       <div className="form-grid">
         <label className="field"><span>事件名稱</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例：第一次段考" autoFocus /></label>
         <label className="field"><span>類型</span><select value={type} onChange={(e) => setType(e.target.value)}>{["schoolExam", "fieldTrip", "majorExam", "other"].map((value) => <option value={value} key={value}>{eventTypeMeta(value).label}</option>)}</select></label>
-        <div className="field calendar-date-picker-field"><span>加入日期</span><div className="calendar-date-picker-row"><input type="date" value={dateInput} onChange={(e) => setDateInput(e.target.value)} /><button type="button" className="btn-ghost btn-sm" onClick={addSingleDate}>加入單日</button></div></div>
-        <div className="field calendar-date-picker-field"><span>加入連續區間</span><div className="calendar-date-picker-row"><input type="date" min={dateInput} value={rangeEndDate} onChange={(e) => setRangeEndDate(e.target.value)} /><button type="button" className="btn-ghost btn-sm" disabled={!dateInput || !rangeEndDate || rangeEndDate < dateInput} onClick={addDateRange}>加入區間</button></div></div>
+        <div className="field calendar-date-picker-field"><span>加入日期</span><div className="calendar-date-picker-row"><DateField value={dateInput} onChange={setDateInput} aria-label="加入日期" /><button type="button" className="btn-ghost btn-sm" onClick={addSingleDate}>加入單日</button></div></div>
+        <div className="field calendar-date-picker-field"><span>加入連續區間</span><div className="calendar-date-picker-row"><DateField min={dateInput} value={rangeEndDate} onChange={setRangeEndDate} placeholder="選擇結束日期" aria-label="連續區間的結束日期" /><button type="button" className="btn-ghost btn-sm" disabled={!dateInput || !rangeEndDate || rangeEndDate < dateInput} onClick={addDateRange}>加入區間</button></div></div>
         <div className="field calendar-schools-field"><span>適用學校（可複選）</span><details className="school-multi-picker"><summary>{schools.length ? `已選 ${schools.length} 所學校` : "全部學校"}</summary><div className="school-multi-options">{(knownSchools || []).length === 0 ? <span className="section-hint">目前沒有可選學校</span> : (knownSchools || []).map((name) => <label key={name}><input type="checkbox" checked={schools.includes(name)} onChange={() => setSchools((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name])} />{name}</label>)}</div></details></div>
         <label className="field calendar-event-note-field"><span>備註（選填）</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例：以學校公告為準" /></label>
       </div>
@@ -1770,7 +1771,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
               {session.time && <span className="date-nav-time"><Clock size={12} /> {session.time}</span>}
             </div>
             <IconBtn onClick={() => goToNearestClassDay(1)} title="下一個上課日"><ChevronRight size={18} /></IconBtn>
-            <input type="date" className="date-nav-picker" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateField className="date-nav-picker" showWeekday={false} value={date} onChange={setDate} aria-label="選擇日期" />
             {date !== todayStr() && <button className="btn-ghost btn-xs" onClick={() => setDate(todayStr())}>回到今天</button>}
           </div>
 
@@ -1796,7 +1797,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           )}
           {addOpen && (
             <div className="inline-form">
-              <input type="time" className="student-input" value={addTime} onChange={(e) => setAddTime(e.target.value)} placeholder="時間（選填）" />
+              <TimeField className="student-input" value={addTime} onChange={setAddTime} placeholder="時間（選填，例：18:30）" aria-label="加課時間（24 小時制）" />
               <button className="btn-ghost btn-xs" onClick={() => { setAddOpen(false); setAddTime(""); }}>返回</button>
               <button className="btn-primary btn-sm" onClick={confirmAdd}>確定新增本次上課</button>
             </div>
@@ -2321,7 +2322,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
         <div className="form-card" style={{ marginTop: 10 }}>
           <div className="form-grid">
             <label className="field"><span>{unitLabel}名稱</span><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="例：CH1 1-3 / 一上一段" /></label>
-            {withSegment && <label className="field"><span>日期</span><input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></label>}
+            {withSegment && <label className="field"><span>日期</span><DateField value={newDate} onChange={setNewDate} clearable aria-label="日期" /></label>}
             {hasSubjects && (
               <label className="field">
                 <span>科目</span>
@@ -2677,9 +2678,9 @@ function NewChargeForm({ students, onCancel, onCreate }) {
             {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <label className="field"><span>發收費袋日期（選填）</span><input type="date" value={givenDate} onChange={(e) => setGivenDate(e.target.value)} /></label>
-        <label className="field"><span>收費區間起</span><input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></label>
-        <label className="field"><span>收費區間迄</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
+        <label className="field"><span>發收費袋日期（選填）</span><DateField value={givenDate} onChange={setGivenDate} clearable aria-label="發收費袋日期" /></label>
+        <label className="field"><span>收費區間起</span><DateField value={periodStart} onChange={setPeriodStart} clearable aria-label="收費區間起" /></label>
+        <label className="field"><span>收費區間迄</span><DateField value={periodEnd} onChange={setPeriodEnd} clearable aria-label="收費區間迄" /></label>
         <label className="field"><span>金額</span><input inputMode="numeric" value={tuition} onChange={(e) => setTuition(e.target.value)} placeholder="0" /></label>
         <label className="field"><span>教材費</span><input inputMode="numeric" value={materials} onChange={(e) => setMaterials(e.target.value)} placeholder="0" /></label>
         <label className="field"><span>折扣</span><input inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" /></label>
@@ -2932,34 +2933,37 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
         const membership = membershipAtDate(s, today, attendance);
         const displayStudent = studentDisplay(s, studentIndex, cls);
         return (
-          <div key={s.id} className="student-row">
+          <div key={s.id} className="student-row roster-row">
             <input className="student-input" value={s.name} onChange={(e) => edit(s.id, "name", e.target.value)} placeholder="姓名" />
             <SchoolField value={displayStudent.school} knownSchools={knownSchools} onChange={(v) => edit(s.id, "school", v)} />
             <select className="student-input student-group-select" value={displayStudent.group || ""} onChange={(e) => edit(s.id, "group", e.target.value)} aria-label={`${displayStudent.name}分組`}>
               {STUDENT_GROUPS.map((option) => <option key={option || "none"} value={option}>{option || "未分組／不適用"}</option>)}
             </select>
-            {s.endDate && <button className="btn-ghost btn-xs" title="若先前是誤按停班，可移除停班與復課日期；若要保留離班歷史，請不要按此鈕" onClick={() => cancelStop(s.id)}>撤銷停班紀錄</button>}
-            <button className="btn-ghost btn-xs" title="試聽滿兩堂後會自動轉為班內生；這裡可以提前手動轉正，或反向手動延長試聽" onClick={() => toggleForce(s.id, membership)}>
-              {membership === "trial" ? <><span className="trial-tag">試</span>轉為班內生</> : "設為試聽生"}
-            </button>
-                          <ConfirmAction label={`確定將 ${displayStudent.name} 標記為停班？往後就不會再出現在出席表裡（歷史紀錄仍會保留）。`} confirmText="確定停班" onConfirm={() => stop(s.id)}>
-
-              <Archive size={13} /> 停班
-            </ConfirmAction>
+            <div className="roster-actions">
+              {s.endDate && <button className="btn-ghost btn-xs" title="若先前是誤按停班，可移除停班與復課日期；若要保留離班歷史，請不要按此鈕" onClick={() => cancelStop(s.id)}>撤銷停班紀錄</button>}
+              <button className="btn-ghost btn-xs" title="試聽滿兩堂後會自動轉為班內生；這裡可以提前手動轉正，或反向手動延長試聽" onClick={() => toggleForce(s.id, membership)}>
+                {membership === "trial" ? <><span className="trial-tag">試</span>轉為班內生</> : "設為試聽生"}
+              </button>
+              <ConfirmAction label={`確定將 ${displayStudent.name} 標記為停班？往後就不會再出現在出席表裡（歷史紀錄仍會保留）。`} confirmText="確定停班" onConfirm={() => stop(s.id)}>
+                <Archive size={13} /> 停班
+              </ConfirmAction>
+            </div>
           </div>
         );
       })}
-      <div className="student-row">
+      <div className="student-row roster-row">
         <input className="student-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="新學生姓名" />
         <SchoolField value={school} knownSchools={knownSchools} onChange={setSchool} />
         <select className="student-input student-group-select" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="新學生分組">
           {STUDENT_GROUPS.map((option) => <option key={option || "none"} value={option}>{option || "未分組／不適用"}</option>)}
         </select>
-        <label className="trial-check">
-          <input type="checkbox" checked={isNewStudent} onChange={(e) => setIsNewStudent(e.target.checked)} />
-          <span>新生（先試聽兩堂）</span>
-        </label>
-        <IconBtn title="新增" onClick={add}><Plus size={15} /></IconBtn>
+        <div className="roster-actions">
+          <label className="trial-check">
+            <input type="checkbox" checked={isNewStudent} onChange={(e) => setIsNewStudent(e.target.checked)} />
+            <span>新生（先試聽兩堂）</span>
+          </label>
+          <IconBtn title="新增" onClick={add}><Plus size={15} /></IconBtn>
+        </div>
       </div>
 
       {stopped.length > 0 && (
@@ -2970,16 +2974,18 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
           {stopped.map((s) => {
             const displayStudent = studentDisplay(s, studentIndex, cls);
             return (
-              <div key={s.id} className="student-row student-row-inactive">
+              <div key={s.id} className="student-row student-row-inactive roster-row">
                 <input className="student-input student-inactive-name-input" value={s.name || displayStudent.name} onChange={(e) => edit(s.id, "name", e.target.value)} placeholder="姓名" />
                 <SchoolField value={displayStudent.school} knownSchools={knownSchools} onChange={(v) => edit(s.id, "school", v)} />
                 <select className="student-input student-group-select" value={displayStudent.group || ""} onChange={(e) => edit(s.id, "group", e.target.value)} aria-label={`${displayStudent.name}分組`}>
                   {STUDENT_GROUPS.map((option) => <option key={option || "none"} value={option}>{option || "未分組／不適用"}</option>)}
                 </select>
-                <span className="student-inactive-date">{s.endDate ? `停班於 ${fmtDate(s.endDate, { weekday: false })}` : ""}</span>
-                <button className="btn-primary btn-xs" title="誤按停班時清除停班日期，保留原本學生 ID 與歷史紀錄" onClick={() => cancelStop(s.id)}>撤銷停班</button>
-                <button className="btn-ghost btn-xs" title="保留停班歷史，從今天開始復課" onClick={() => reactivate(s.id)}>今天復課</button>
-                <ConfirmDelete label={`永久刪除${displayStudent.name}的所有資料？`} onConfirm={() => removePermanently(s.id)} />
+                <div className="roster-actions">
+                  <span className="student-inactive-date">{s.endDate ? `停班於 ${fmtDate(s.endDate, { weekday: false })}` : ""}</span>
+                  <button className="btn-primary btn-xs" title="誤按停班時清除停班日期，保留原本學生 ID 與歷史紀錄" onClick={() => cancelStop(s.id)}>撤銷停班</button>
+                  <button className="btn-ghost btn-xs" title="保留停班歷史，從今天開始復課" onClick={() => reactivate(s.id)}>今天復課</button>
+                  <ConfirmDelete label={`永久刪除${displayStudent.name}的所有資料？`} onConfirm={() => removePermanently(s.id)} />
+                </div>
               </div>
             );
           })}
@@ -3059,7 +3065,7 @@ function ScheduleEditor({ cls, onUpdateClass }) {
               </span>
               {endingRuleId === r.id ? (
                 <span className="confirm-inline">
-                  <input type="date" className="date-nav-picker" value={endingDate} onChange={(e) => setEndingDate(e.target.value)} />
+                  <DateField className="date-nav-picker" showWeekday={false} value={endingDate} onChange={setEndingDate} aria-label="結束日期" />
                   <button className="btn-ghost btn-xs" onClick={() => setEndingRuleId(null)}>取消</button>
                   <button className="btn-primary btn-sm" onClick={confirmEndRule}>確定</button>
                 </span>
@@ -3088,13 +3094,13 @@ function ScheduleEditor({ cls, onUpdateClass }) {
                 <option value={1}>每週</option><option value={2}>隔週</option>
               </select>
             </label>
-            <label className="field"><span>上課開始時間（選填）</span><input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
-            <label className="field"><span>上課結束時間（選填）</span><input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
+            <label className="field"><span>上課開始時間（選填）</span><TimeField value={startTime} onChange={setStartTime} aria-label="上課開始時間（24 小時制）" /></label>
+            <label className="field"><span>上課結束時間（選填）</span><TimeField value={endTime} onChange={setEndTime} aria-label="上課結束時間（24 小時制）" /></label>
             {Number(interval) === 2 && (
-              <label className="field"><span>基準上課日（用來判斷單雙週）</span><input type="date" value={anchorDate} onChange={(e) => setAnchorDate(e.target.value)} /></label>
+              <label className="field"><span>基準上課日（用來判斷單雙週）</span><DateField value={anchorDate} onChange={setAnchorDate} clearable aria-label="基準上課日" /></label>
             )}
-            <label className="field"><span>生效起始日</span><input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} /></label>
-            <label className="field"><span>生效結束日（留空＝持續）</span><input type="date" value={effectiveTo} onChange={(e) => setEffectiveTo(e.target.value)} /></label>
+            <label className="field"><span>生效起始日</span><DateField value={effectiveFrom} onChange={setEffectiveFrom} clearable aria-label="生效起始日" /></label>
+            <label className="field"><span>生效結束日（留空＝持續）</span><DateField value={effectiveTo} onChange={setEffectiveTo} clearable placeholder="持續（不設結束日）" aria-label="生效結束日" /></label>
           </div>
           <div className="form-actions">
             <button className="btn-ghost" onClick={() => setAdding(false)}>取消</button>
@@ -3597,6 +3603,18 @@ button:active { transform: scale(.98); }
 @media (max-width: 720px) { .view-pad { padding: 18px 12px 42px; }.today-hero { align-items: flex-start; padding: 23px 20px; }.hero-sticker { width: 86px; height: 86px; }.hero-sticker span { font-size: 15px; }.hero-copy p { font-size: 13px; }.calendar-shell { padding: 12px; }.calendar-header { align-items: flex-start; flex-direction: column; }.calendar-header-actions { width: 100%; flex-wrap: wrap; }.week-grid { overflow-x: auto; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding-bottom: 6px; }.week-column { min-height: 260px; }.today-metrics { gap: 8px; }.metric-card { min-height: 92px; padding: 13px; }.metric-card strong { font-size: 26px; } }
 .lesson-videos-view{max-width:1120px}.lesson-videos-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.lesson-videos-toolbar label{display:grid;gap:5px;color:var(--ink-soft);font-size:12px;font-weight:700}.lesson-videos-toolbar input,.lesson-videos-toolbar select{min-height:36px;border:1px solid var(--line);border-radius:10px;background:#FFF;color:var(--ink);padding:7px 10px;font:inherit;font-size:13px}.lesson-video-list{display:grid;gap:12px}.lesson-video-card{background:#FFF;border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow-soft)}.lesson-video-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.lesson-video-card-head strong{display:block;color:var(--ink);font:700 16px 'IBM Plex Mono',monospace}.lesson-video-card-head span:not(.tag){display:block;color:var(--ink-soft);font-size:13px;margin-top:4px}.lesson-video-students{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0;color:var(--ink-soft);font-size:13px}.lesson-video-student{padding:5px 8px;border-radius:8px;background:#FFF1F0;color:#B34C47;font-weight:700}.lesson-video-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lesson-video-form input{flex:1 1 360px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:13px}.lesson-video-form a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}.lesson-videos-message{margin:10px 0}
 @media (max-width:720px){.lesson-video-card{padding:13px}.lesson-video-card-head{flex-direction:column}.lesson-video-form input{flex-basis:100%}.lesson-video-form .btn-primary{width:100%}}
+/* student roster: the three kinds of row (current, new, stopped) share one column grid,
+   so name / school / group line up from row to row */
+.roster-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) 340px; gap: 8px; align-items: center; padding: 6px 10px; margin-bottom: 6px; border-radius: 10px; }
+.roster-row > .student-input, .roster-row > .school-add-row { width: 100%; min-width: 0; flex: none; }
+.roster-row.student-row-inactive { background: #F1F1EE; }
+.roster-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.roster-row:has(.confirm-inline) .roster-actions { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  .roster-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .roster-row > :first-child { grid-column: 1 / -1; }
+  .roster-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
 ${THEME_COMPONENTS_CSS}
 
 `;

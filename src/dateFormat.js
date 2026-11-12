@@ -70,3 +70,32 @@ export function twoCalendarMonthsAgo(now = new Date()) {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
   return localDateString(new Date(target.getFullYear(), target.getMonth(), Math.min(now.getDate(), lastDay)));
 }
+
+const FULL_WIDTH_DIGITS = "０１２３４５６７８９";
+const toHalfWidth = (text) => String(text ?? "").replace(/[０-９]/g, (ch) => String(FULL_WIDTH_DIGITS.indexOf(ch))).replace(/[：﹕]/g, ":").trim();
+
+/** Reads a typed time and returns it as 24 hour "HH:MM".
+    "" for an empty field, null when it is not a time (or, while typing,
+    not finished yet). Accepts 1830, 18:30, 6:30, 630 and full-width digits.
+    With { final: true } (leaving the field) a bare hour like "18" becomes "18:00". */
+export function normalizeTime(raw, { final = false } = {}) {
+  const text = toHalfWidth(raw);
+  if (!text) return "";
+  let hour;
+  let minute;
+  if (text.includes(":")) {
+    const parts = text.split(":");
+    if (parts.length !== 2 || /\D/.test(parts.join(""))) return null;
+    [hour, minute] = parts;
+  } else {
+    if (/\D/.test(text) || text.length > 4) return null;
+    if (text.length <= 2) { hour = text; minute = ""; } else { hour = text.slice(0, text.length - 2); minute = text.slice(-2); }
+  }
+  if (!hour || hour.length > 2) return null;
+  if (minute === "") { if (!final) return null; minute = "00"; }
+  if (minute.length !== 2) return null;
+  const h = Number(hour);
+  const m = Number(minute);
+  if (h > 23 || m > 59) return null;
+  return `${pad(h)}:${pad(m)}`;
+}

@@ -62,11 +62,27 @@ export const THEME_COMPONENTS_CSS = `
 .utility-pill { min-height: 34px; padding: 0 12px; }
 
 /* ===== inputs and selects: same height, radius and text size ===== */
-.field input, .field select, .student-input, .lesson-videos-toolbar input, .lesson-videos-toolbar select, .lesson-video-form input,
+.field input, .field select, .student-input, .time-field, .lesson-videos-toolbar input, .lesson-videos-toolbar select, .lesson-video-form input,
 .auth-input, .so-search, .so-select, .sc-attendance-filters input, .sc-attendance-filters select {
   min-height: 38px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
   background: #FFFFFF; color: var(--ink); font-family: inherit; font-size: 14px;
 }
+
+/* ===== date and time fields (see DateTimeFields.jsx) ===== */
+.date-field { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; width: 100%; min-height: 38px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: #FFFFFF; color: var(--ink); font-family: inherit; font-size: 14px; cursor: pointer; }
+.date-field:hover { border-color: #AAB7EF; }
+.date-field:focus-within { border-color: #91A0EE; box-shadow: 0 0 0 4px rgba(97,119,232,.12); }
+.date-field-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-field.is-empty .date-field-text { color: #8E99A9; }
+.date-field-icon { flex: none; color: var(--ink-soft); }
+.date-field .date-field-native { position: absolute; inset: 0; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; opacity: 0; cursor: pointer; font-size: 16px; }
+.date-field-clear { position: absolute; z-index: 1; right: 36px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; border: 0; border-radius: 999px; background: #EEF1F7; color: var(--ink-soft); font-size: 14px; line-height: 1; cursor: pointer; }
+.date-field-clear:hover { background: var(--blue-soft); color: var(--blue); }
+.date-field.is-disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+.date-field.date-nav-picker { width: auto; min-height: 32px; padding: 4px 10px; border-radius: 8px; font-size: 12px; }
+.lesson-videos-toolbar .date-field, .sc-attendance-filters .date-field { width: auto; min-width: 160px; min-height: 36px; font-size: 13px; }
+.calendar-date-picker-row .date-field { flex: 1; min-width: 0; }
+.time-field.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(178,58,52,.12); }
 
 /* ===== keyboard focus: visible everywhere ===== */
 button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, [role="button"]:focus-visible {
@@ -75,7 +91,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 
 /* ===== touch screens: 16px text in fields so iPhone / iPad do not zoom in on focus ===== */
 @media (pointer: coarse) {
-  .field input, .field select, .field textarea, .student-input, .lesson-videos-toolbar input, .lesson-videos-toolbar select, .lesson-video-form input,
+  .field input, .field select, .field textarea, .student-input, .time-field, .lesson-videos-toolbar input, .lesson-videos-toolbar select, .lesson-video-form input,
   .auth-input, .so-search, .so-select, .sc-attendance-filters input, .sc-attendance-filters select,
   .matrix-input, .matrix-input-sub, .assessment-name-input, .assessment-range-input { font-size: 16px; }
 }

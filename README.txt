@@ -1,5 +1,5 @@
 覆蓋方式：把本資料夾裡的 index.html、src、scripts 整個複製到專案根目錄，遇到同名檔案選「取代」。
-不需要刪除任何舊檔，專案裡其他檔案（package.json、firebase.rules.json、public 等）完全沒有動。
+不需要刪除任何舊檔；package.json、firebase.rules.json、public 等其他檔案完全沒有動。
 
 【修改的既有檔案 12 個】
   index.html
@@ -15,16 +15,17 @@
   src/studentFirstStorage.js
   src/studentRecords.js
 
-【新增的檔案 10 個】
+【新增的檔案 11 個】
   scripts/assessmentRows.test.mjs
   scripts/classSync.test.mjs
   scripts/dateFormat.test.mjs
   scripts/friendlyError.test.mjs
   scripts/theme.test.mjs
+  src/DateTimeFields.jsx
   src/assessmentRows.js
   src/classSync.js
   src/dateFormat.js
   src/friendlyError.js
   src/theme.js
 
-覆蓋後請執行：npm test（應為 40 項全過）、npm run build。
+覆蓋後請執行：npm test（應為 43 項全過）、npm run build。

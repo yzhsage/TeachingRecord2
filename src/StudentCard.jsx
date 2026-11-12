@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { buildStudentCard, orderSubjects, safeVideoUrl } from "./studentRecords.js";
+import { DateField } from "./DateTimeFields.jsx";
 import { fmtDate, fmtStamp, localDateString, twoCalendarMonthsAgo } from "./dateFormat.js";
 import { CHART_THEME, STATUS_STYLE } from "./theme.js";
 
@@ -211,7 +212,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
       </Section>
 
       <Section title="出缺勤紀錄" hint={card.attendance.length ? `${parentMode ? "預設顯示近兩個月；" : ""}原始紀錄 ${card.attendance.length} 筆；可依日期、班級與狀態篩選。` : ""}>
-        <div className="sc-attendance-filters"><label>開始日期<input type="date" value={attendanceFrom} onChange={(e) => { setAttendanceFrom(e.target.value); setShowAllAttendance(false); }} /></label><label>結束日期<input type="date" value={attendanceTo} onChange={(e) => { setAttendanceTo(e.target.value); setShowAllAttendance(false); }} /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="all">全部狀態</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
+        <div className="sc-attendance-filters"><label>開始日期<DateField value={attendanceFrom} onChange={(value) => { setAttendanceFrom(value); setShowAllAttendance(false); }} aria-label="開始日期" /></label><label>結束日期<DateField value={attendanceTo} onChange={(value) => { setAttendanceTo(value); setShowAllAttendance(false); }} aria-label="結束日期" /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="all">全部狀態</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
         {filteredAttendance.length === 0 ? <p className="sc-muted">目前篩選條件沒有出缺勤紀錄。</p> : (
           <>
             <div className="sc-list">

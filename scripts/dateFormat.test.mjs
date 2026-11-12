@@ -44,3 +44,35 @@ test("two months ago stays inside that month (no overflow into the next one)", (
   assert.equal(twoCalendarMonthsAgo(new Date(2026, 10, 9)), "2026-09-09");
   assert.equal(localDateString(new Date(2026, 0, 5)), "2026-01-05");
 });
+
+import { normalizeTime } from "../src/dateFormat.js";
+
+test("typed times become 24 hour HH:MM", () => {
+  assert.equal(normalizeTime("18:30"), "18:30");
+  assert.equal(normalizeTime("1830"), "18:30");
+  assert.equal(normalizeTime("6:30"), "06:30");
+  assert.equal(normalizeTime("630"), "06:30");
+  assert.equal(normalizeTime("０９：０５"), "09:05");
+  assert.equal(normalizeTime(" 20:00 "), "20:00");
+  assert.equal(normalizeTime("00:00"), "00:00");
+  assert.equal(normalizeTime("23:59"), "23:59");
+});
+
+test("an empty field stays empty; unfinished or impossible times are rejected", () => {
+  assert.equal(normalizeTime(""), "");
+  assert.equal(normalizeTime(undefined), "");
+  assert.equal(normalizeTime("18"), null);      // still typing
+  assert.equal(normalizeTime("18:3"), null);
+  assert.equal(normalizeTime("24:00"), null);
+  assert.equal(normalizeTime("12:60"), null);
+  assert.equal(normalizeTime("ab:cd"), null);
+  assert.equal(normalizeTime("1:2:3"), null);
+  assert.equal(normalizeTime("12345"), null);
+});
+
+test("leaving the field turns a bare hour into HH:00", () => {
+  assert.equal(normalizeTime("18", { final: true }), "18:00");
+  assert.equal(normalizeTime("6", { final: true }), "06:00");
+  assert.equal(normalizeTime("25", { final: true }), null);
+  assert.equal(normalizeTime("18:3", { final: true }), null);
+});
