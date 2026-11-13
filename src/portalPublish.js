@@ -66,7 +66,7 @@ async function run() {
     const roots = await loadRecordRoots();
     const check = publishSafetyCheck(roots);
     if (!check.ok) {
-      setStatus({ state: "skipped", message: `${check.reason}，為了保護家長看到的資料，這次沒有更新` });
+      setStatus({ state: "skipped", message: `${check.reason}，家長端暫不更新` });
       return;
     }
     if (!published) published = (await readPath("portalStudentData", "家長查閱資料")) || {};

@@ -21,7 +21,7 @@ export default function AuthGate({ children }) {
   async function handleGoogleLogin() {
     setError(""); setLoading(true);
     try { await signInWithPopup(auth, googleProvider); }
-    catch (err) { setError(err.code === "auth/popup-closed-by-user" ? "登入視窗已關閉。" : "Google 登入失敗，請確認 Firebase 已啟用 Google 登入。"); }
+    catch (err) { setError(err.code === "auth/popup-closed-by-user" ? "登入視窗已關閉。" : "Google 登入失敗，請確認已啟用 Google 登入。"); }
     finally { setLoading(false); }
   }
 
@@ -55,7 +55,7 @@ export default function AuthGate({ children }) {
   return (
     <div className="auth-shell">
       <div className="auth-card">
-        <div className="auth-title">教學紀錄系統</div>
+        <div className="auth-title">教學紀錄</div>
         {error && <div className="auth-error">{error}</div>}
         <button type="button" className="google-btn" onClick={handleGoogleLogin} disabled={loading}>使用 Google 帳戶登入</button>
         <div className="auth-divider"><span>家長／學生電子郵件登入</span></div>

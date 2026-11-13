@@ -32,17 +32,17 @@ function ActivationView({ user, onBound, onCancel }) {
       let invite = null;
       try { invite = (await get(inviteRef)).val(); }
       catch (err) {
-        if (isPermission(err)) throw new Error("認證碼不正確、已被使用或已停用，請再確認一次。");
+        if (isPermission(err)) throw new Error("認證碼不正確、已被使用或已停用。");
         throw new Error("網路不穩，請稍後再試。");
       }
-      if (!invite || invite.revoked || (invite.claimedBy && invite.claimedBy !== user.uid)) throw new Error("認證碼不正確、已被使用或已停用，請再確認一次。");
+      if (!invite || invite.revoked || (invite.claimedBy && invite.claimedBy !== user.uid)) throw new Error("認證碼不正確、已被使用或已停用。");
       if (!invite.studentId) throw new Error("這組認證碼還沒有指定學生，請聯絡老師。");
       if (invite.claimedBy !== user.uid) {
         const claim = await runTransaction(inviteRef, (current) => {
           if (!current || current.revoked || current.claimedBy) return;
           return { ...current, claimedBy: user.uid, claimedAt: new Date().toISOString() };
         });
-        if (!claim.committed) throw new Error("這組認證碼剛剛已被其他帳戶使用。");
+        if (!claim.committed) throw new Error("此認證碼已被其他帳戶使用。");
       }
       // Safe to repeat: if a previous try stopped halfway, entering the same
       // code again finishes the binding.
@@ -66,14 +66,14 @@ function ActivationView({ user, onBound, onCancel }) {
       <div className="portal-box portal-activation">
         <div className="portal-kicker">教學紀錄</div>
         <h1>{onCancel ? "綁定另一位學生" : "第一次登入"}</h1>
-        <p>請輸入老師給你的 8 碼認證碼。只需要輸入一次，之後登入就會直接看到學生的學習紀錄。</p>
+        <p>請輸入老師提供的 8 碼認證碼（只需輸入一次）。</p>
         <form onSubmit={activate}>
           <label className="portal-field"><span>8 碼認證碼</span><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/\s/g, ""))} placeholder="例如 A7K3P9Q2" maxLength={8} autoFocus autoComplete="off" /></label>
           {error && <div className="portal-error" role="alert">{error}</div>}
-          <button className="portal-primary" disabled={busy || code.trim().length < 8}>{busy ? "設定中…" : "開始查看"}</button>
+          <button className="portal-primary" disabled={busy || code.trim().length < 8}>{busy ? "設定中…" : "確認"}</button>
         </form>
         {onCancel
-          ? <button className="portal-link" onClick={onCancel}>取消，回到學習紀錄</button>
+          ? <button className="portal-link" onClick={onCancel}>取消</button>
           : <button className="portal-link" onClick={() => signOut(auth)}>改用其他帳戶登入</button>}
         <div className="portal-who">目前登入：{user.email || user.displayName || "（沒有電子郵件）"}</div>
       </div>
@@ -121,7 +121,7 @@ export default function ParentPortal({ user }) {
   if (state.status === "error") {
     return (
       <div className="portal-shell">
-        <div className="portal-box portal-activation"><h1>資料暫時無法載入</h1><p>{state.error}，請再試一次。</p><button className="portal-primary" onClick={() => load()}>重新載入</button><button className="portal-link" onClick={() => signOut(auth)}>登出</button></div>
+        <div className="portal-box portal-activation"><h1>載入失敗</h1><p>{state.error}，請重試。</p><button className="portal-primary" onClick={() => load()}>重新載入</button><button className="portal-link" onClick={() => signOut(auth)}>登出</button></div>
         <style>{PORTAL_CSS}</style>
       </div>
     );
@@ -136,7 +136,7 @@ export default function ParentPortal({ user }) {
   return (
     <div className="portal-shell">
       <header className="portal-top">
-        <div className="portal-brand">教學紀錄 · 學習紀錄查詢</div>
+        <div className="portal-brand">教學紀錄</div>
         <div className="portal-top-actions">
           <button className="portal-link" onClick={() => setAdding(true)}>＋綁定另一位學生</button>
           <button className="portal-link" onClick={() => signOut(auth)}>登出</button>
@@ -150,9 +150,9 @@ export default function ParentPortal({ user }) {
       <main className="portal-main">
         {active.data ? <StudentCard key={activeId} snapshot={active.data} parentMode /> : (
           <div className="portal-box">
-            {active.error === "denied" && <><h1>這位學生的紀錄目前無法查看</h1><p>認證碼可能已被老師停用，或需要重新輸入一次。如果有新的認證碼，請按下方按鈕輸入。</p><button className="portal-primary" onClick={() => setAdding(true)}>輸入認證碼</button></>}
-            {active.error === "missing" && <><h1>學習紀錄準備中</h1><p>老師那邊還沒有產生這位學生的紀錄，通常老師下次開啟系統後就會出現，請稍後再回來看看。</p><button className="portal-primary" onClick={() => load(activeId)}>重新整理</button></>}
-            {active.error === "failed" && <><h1>資料暫時無法載入</h1><p>網路不穩或連線還沒準備好，請再試一次。</p><button className="portal-primary" onClick={() => load(activeId)}>重新載入</button></>}
+            {active.error === "denied" && <><h1>無法查看</h1><p>認證碼可能已停用。有新的認證碼請重新輸入。</p><button className="portal-primary" onClick={() => setAdding(true)}>輸入認證碼</button></>}
+            {active.error === "missing" && <><h1>紀錄尚未產生</h1><p>老師開啟系統後會自動產生，請稍後再看。</p><button className="portal-primary" onClick={() => load(activeId)}>重新整理</button></>}
+            {active.error === "failed" && <><h1>載入失敗</h1><p>請確認網路後重試。</p><button className="portal-primary" onClick={() => load(activeId)}>重新載入</button></>}
           </div>
         )}
       </main>

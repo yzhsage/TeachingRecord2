@@ -225,6 +225,24 @@ export function diffPortalData(existing, next) {
   return patch;
 }
 
+/** A day that is nothing but 出席. 出席 with 遲到 or 早退 is NOT plain: it is worth listing. */
+export const isPlainPresent = (row) => Array.isArray(row?.statuses) && row.statuses.length === 1 && row.statuses[0] === "出席";
+
+/** Attendance list default: everything except plain 出席. */
+export const DEFAULT_ATTENDANCE_STATUS = "exceptions";
+
+/** Attendance rows of a card, filtered by date range and status.
+    status: "exceptions" (default: all but plain 出席), "all", or one status name such as "請假". */
+export function filterAttendanceRows(rows, { from = "", to = "", status = DEFAULT_ATTENDANCE_STATUS } = {}) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (from && row.date < from) return false;
+    if (to && row.date > to) return false;
+    if (!status || status === "all") return true;
+    if (status === DEFAULT_ATTENDANCE_STATUS) return !isPlainPresent(row);
+    return Array.isArray(row.statuses) && row.statuses.includes(status);
+  });
+}
+
 /** Subjects of the scores shown, in the teacher's order for that class (the
     class's 分科目 list), then any others, then scores with no subject last. */
 export function orderSubjects(scores, classes = []) {

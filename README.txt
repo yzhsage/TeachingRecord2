@@ -28,4 +28,4 @@
   src/friendlyError.js
   src/theme.js
 
-覆蓋後請執行：npm test（應為 43 項全過）、npm run build。
+覆蓋後請執行：npm test（應為 46 項全過）、npm run build。

@@ -30,12 +30,12 @@ function usePublishStatus() {
 function PublishStatusLine() {
   const status = usePublishStatus();
   if (!status) return null;
-  let text = "存檔後約 5 秒，家長看到的資料會自動更新。";
+  let text = "存檔約 5 秒後自動更新家長端。";
   let tone = "";
-  if (status.state === "pending" || status.state === "publishing") text = "正在更新家長看到的資料…";
-  if (status.state === "ok") text = `家長看到的資料已是最新（${fmtStamp(status.at)}${status.changed ? `，更新了 ${status.changed} 位學生` : ""}）。`;
+  if (status.state === "pending" || status.state === "publishing") text = "更新家長端中…";
+  if (status.state === "ok") text = `家長端已更新（${fmtStamp(status.at)}${status.changed ? `，${status.changed} 位學生` : ""}）`;
   if (status.state === "skipped") { text = status.message; tone = "warn"; }
-  if (status.state === "error") { text = `家長資料更新失敗：${status.message}。一分鐘後會自動再試。`; tone = "bad"; }
+  if (status.state === "error") { text = `家長端更新失敗：${status.message}。1 分鐘後自動重試。`; tone = "bad"; }
   return (
     <div className={`so-publish${tone ? ` so-publish-${tone}` : ""}`} role="status">
       <span>{text}</span>
@@ -91,10 +91,10 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
   return (
     <section className="so-accounts">
       <div className="so-accounts-head">
-        <div><div className="so-kicker">只有你看得到</div><h3>家長／學生登入</h3></div>
+        <div><h3>家長／學生登入</h3></div>
         <button type="button" className="btn-primary" disabled={busy || !!portalError} onClick={createInvite}>建立 8 碼認證碼</button>
       </div>
-      <p className="so-hint">家長或學生用自己的 Google 或電子郵件登入，第一次輸入認證碼後，之後登入就會直接看到上面這張卡片。一組認證碼只能綁定一個帳戶。</p>
+      <p className="so-hint">家長／學生以 Google 或電子郵件登入，首次輸入認證碼後即可查看。一組認證碼僅能綁定一個帳戶。</p>
       {portalError && <div className="so-alert">讀不到認證碼清單：{portalError}。請到 Firebase 後台貼上新版規則並按「發布」。</div>}
       {message && <div className="so-note" role="status">{message}</div>}
       <div className="so-accounts-grid">
@@ -129,8 +129,8 @@ function AccountPanel({ studentId, studentName, invites, accounts, portalError, 
           )}
         </div>
         <div>
-          <h4>可以查看的帳戶</h4>
-          {bound.length === 0 ? <p className="so-muted">目前沒有人綁定。</p> : (
+          <h4>已綁定帳戶</h4>
+          {bound.length === 0 ? <p className="so-muted">尚無綁定。</p> : (
             <ul className="so-bound">{bound.map((account) => <li key={account.uid}>{account.email || account.displayName || account.uid}</li>)}</ul>
           )}
         </div>
@@ -182,10 +182,10 @@ export default function StudentOverview() {
     const existingStudentIds = new Set(Object.values(portal.invites || {}).filter((invite) => invite?.studentId && invite.revoked !== true && !invite.claimedBy).map((invite) => invite.studentId));
     const pending = rows.filter((row) => !existingStudentIds.has(row.id));
     if (!pending.length) {
-      if (!silent) setBulkCodeMessage("目前每位學生都已有可用的認證碼。");
+      if (!silent) setBulkCodeMessage("每位學生都已有認證碼。");
       return;
     }
-    setBulkCodeBusy(true); if (!silent) setBulkCodeMessage(`正在為 ${pending.length} 位學生產生認證碼…`);
+    setBulkCodeBusy(true); if (!silent) setBulkCodeMessage(`建立 ${pending.length} 位學生的認證碼中…`);
     try {
       const used = new Set(Object.keys(portal.invites || {}));
       const writes = pending.map((row) => {
@@ -256,11 +256,11 @@ export default function StudentOverview() {
     setParentPreview(false);
   }, [selectedId]);
 
-  if (records.status === "loading") return <div className="view-pad"><div className="so-loading">正在讀取全部學生…</div><style>{OVERVIEW_CSS}</style></div>;
+  if (records.status === "loading") return <div className="view-pad"><div className="so-loading">讀取中…</div><style>{OVERVIEW_CSS}</style></div>;
   if (records.status === "error" && !records.roots) {
     return (
       <div className="view-pad">
-        <div className="so-error-card"><h3>學生資料沒有讀到</h3><p>{records.error}。你的資料沒有遺失，請再試一次。</p><button type="button" className="btn-primary" onClick={() => load(true)}>重新讀取</button></div>
+        <div className="so-error-card"><h3>學生資料讀取失敗</h3><p>{records.error}。資料沒有遺失，請重試。</p><button type="button" className="btn-primary" onClick={() => load(true)}>重新讀取</button></div>
         <style>{OVERVIEW_CSS}</style>
       </div>
     );
@@ -280,7 +280,7 @@ export default function StudentOverview() {
             <button type="button" className="btn-ghost btn-sm" disabled={!next} onClick={() => next && setSelectedId(next.id)}>下一位</button>
           </div>
         </div>
-        <div className="so-preview-note">{parentPreview ? "目前是家長畫面預覽：補課影片與出缺勤預設顯示近兩個月。" : "目前是教師畫面：可查看完整歷史紀錄與帳戶管理功能。"}</div>
+        {parentPreview && <div className="so-preview-note">家長畫面預覽（出缺勤、補課只顯示近兩個月）</div>}
         <StudentCard
           key={selected.id}
           snapshot={selected.snapshot}
@@ -297,7 +297,7 @@ export default function StudentOverview() {
       <div className="so-head">
         <div>
           <h2 className="so-title">學生總覽</h2>
-          <div className="so-subtitle">共 {rows.filter((row) => !row.stopped).length} 位在學學生{rows.some((row) => row.stopped) ? `，${rows.filter((row) => row.stopped).length} 位已停課` : ""}。點學生可以看他的完整紀錄。</div>
+          <div className="so-subtitle">在學 {rows.filter((row) => !row.stopped).length} 人{rows.some((row) => row.stopped) ? `，已停課 ${rows.filter((row) => row.stopped).length} 人` : ""}</div>
         </div>
         <div className="so-head-actions"><button type="button" className="btn-primary" disabled={bulkCodeBusy || !!portal.error} onClick={createMissingInvites}>{bulkCodeBusy ? "自動建立中…" : "自動建立全部認證碼"}</button><button type="button" className="btn-ghost" disabled={records.status === "refreshing"} onClick={() => load(true)}>{records.status === "refreshing" ? "讀取中…" : "重新讀取"}</button></div>
       </div>
@@ -370,7 +370,6 @@ const OVERVIEW_CSS = `
 .so-preview-note{font-size:13px;color:var(--ink-soft);margin-bottom:12px}
 .so-accounts{border:1px dashed #CBD5E5;background:#FFFFFF;border-radius:18px;padding:18px}
 .so-accounts-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.so-kicker{font-size:11px;color:var(--blue);font-weight:700;letter-spacing:.06em}
 .so-accounts h3{margin:2px 0 0;font-family:'Noto Serif TC',serif;font-size:17px}
 .so-accounts h4{font-size:13px;margin:14px 0 6px;color:var(--ink-soft)}
 .so-hint{font-size:13px;color:var(--ink-soft);line-height:1.6;margin:8px 0 0}

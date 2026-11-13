@@ -186,3 +186,32 @@ test("orderSubjects follows the class's own list, then the rest alphabetically",
   const rows = [{ subject: "化學" }, { subject: "生物" }, { subject: "物理" }, { subject: "" }];
   assert.deepEqual(orderSubjects(rows, [{ subjects: ["物理", "化學"] }]), ["物理", "化學", "生物"]);
 });
+
+import { DEFAULT_ATTENDANCE_STATUS, filterAttendanceRows, isPlainPresent } from "../src/studentRecords.js";
+
+const att = (date, ...statuses) => ({ id: date, date, statuses });
+
+test("only a day that is nothing but 出席 counts as plain attendance", () => {
+  assert.equal(isPlainPresent(att("2026-11-02", "出席")), true);
+  assert.equal(isPlainPresent(att("2026-11-02", "出席", "遲到")), false);
+  assert.equal(isPlainPresent(att("2026-11-02", "出席", "遲到", "早退")), false);
+  assert.equal(isPlainPresent(att("2026-11-02", "請假")), false);
+  assert.equal(isPlainPresent(att("2026-11-02")), false);
+  assert.equal(isPlainPresent(undefined), false);
+});
+
+test("the attendance list leaves out plain 出席 by default", () => {
+  const rows = [att("2026-11-02", "出席"), att("2026-11-03", "請假"), att("2026-11-04", "出席", "遲到"), att("2026-11-05", "曠課"), att("2026-11-06", "延課"), att("2026-11-09", "假期"), att("2026-11-10", "出席")];
+  assert.equal(DEFAULT_ATTENDANCE_STATUS, "exceptions");
+  assert.deepEqual(filterAttendanceRows(rows).map((row) => row.date), ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09"]);
+});
+
+test("all, a single status, and the date range still work", () => {
+  const rows = [att("2026-11-02", "出席"), att("2026-11-03", "請假"), att("2026-11-04", "出席", "遲到"), att("2026-11-05", "曠課")];
+  assert.equal(filterAttendanceRows(rows, { status: "all" }).length, 4);
+  assert.deepEqual(filterAttendanceRows(rows, { status: "出席" }).map((row) => row.date), ["2026-11-02", "2026-11-04"]);
+  assert.deepEqual(filterAttendanceRows(rows, { status: "遲到" }).map((row) => row.date), ["2026-11-04"]);
+  assert.deepEqual(filterAttendanceRows(rows, { from: "2026-11-04" }).map((row) => row.date), ["2026-11-04", "2026-11-05"]);
+  assert.deepEqual(filterAttendanceRows(rows, { to: "2026-11-03", status: "all" }).map((row) => row.date), ["2026-11-02", "2026-11-03"]);
+  assert.deepEqual(filterAttendanceRows(undefined), []);
+});

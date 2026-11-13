@@ -682,15 +682,15 @@ export default function App() {
         ...(shouldWriteFee ? [saveKey(`fee:${classId}`, cleaned.fee)] : []),
       ]);
       if (results.some((ok) => !ok)) {
-        setToast("永久清除未完成：部分資料儲存失敗，請確認網路或權限後再按一次。資料未宣告為已清除。");
+        setToast("永久清除未完成，部分資料未刪除。請確認網路後再試一次。");
         return false;
       }
       setStudentIndex(nextStudentIndex);
-      setToast("已完成這位學生在本班的永久清除。");
+      setToast("已永久清除這位學生在本班的資料。");
       return true;
     } catch (error) {
       console.error("student purge failed", classId, studentId, error);
-      setToast("永久清除失敗，資料未完成移除；請確認網路後再試。");
+      setToast("永久清除失敗，請確認網路後再試。");
       return false;
     }
   }
@@ -791,7 +791,7 @@ export default function App() {
         setLastBackupAt(nowIso);
         setToast("備份檔案已下載。");
       } else {
-        setToast("備份檔案已下載，但備份時間未能同步到雲端；請稍後重試。");
+        setToast("備份已下載，但備份時間未同步，請稍後再試。");
       }
     } catch (e) {
       setToast("匯出失敗，請再試一次。");
@@ -838,7 +838,7 @@ export default function App() {
       setToast(`已從備份還原 ${importedClasses.length} 個班級${importedEvents ? `與 ${importedEvents.length} 個行事曆事件` : ""}。`);
       return true;
     } catch (e) {
-      setToast("讀取備份內容失敗，請確認格式沒有被截斷或修改過。");
+      setToast("備份內容無法讀取，請確認檔案完整。");
       return false;
     }
   }
@@ -850,7 +850,7 @@ export default function App() {
       const text = await file.text();
       await importBundleText(text);
     } catch (e) {
-      setToast("讀取備份檔案失敗，手機瀏覽器有時候選檔會失敗，可以試試看下面「貼上備份內容」的方式。");
+      setToast("讀取失敗，可改用下方「貼上備份內容」。");
     }
   }
   function openClass(id, tab, date) {
@@ -876,8 +876,8 @@ export default function App() {
       <Shell>
         {classLoadFailed ? (
           <div className="load-error-screen">
-            <div className="load-error-title">班級資料沒有讀到</div>
-            <p>可能是網路不穩，或資料庫連線還沒準備好。你的資料沒有遺失。</p>
+            <div className="load-error-title">班級資料讀取失敗</div>
+            <p>請確認網路後重試，資料沒有遺失。</p>
             <button type="button" className="load-error-btn" onClick={retryFailedLoads}>重新讀取</button>
           </div>
         ) : (
@@ -898,7 +898,7 @@ export default function App() {
       />
       {failedLoadCount > 0 && (
         <div className="load-error-banner" role="alert">
-          <span>有部分紀錄沒有讀到（網路或連線不穩）。為了避免蓋掉原本的資料，這些紀錄暫時不會存檔，請先不要修改。</span>
+          <span>部分紀錄讀取失敗，這些紀錄暫停存檔以免覆蓋原資料，請先不要修改。</span>
           <button type="button" className="load-error-btn" onClick={retryFailedLoads}>重新讀取</button>
         </div>
       )}
@@ -907,7 +907,7 @@ export default function App() {
         <div className="view-pad" style={{ paddingBottom: 0 }}>
           <div className="form-card">
             <div className="form-title">資料備份</div>
-            <div className="section-hint" style={{ marginBottom: 10 }}>建議定期匯出備份檔存到自己的裝置，避免資料遺失。備份也會包含手動建立的行事曆事件；匯入備份會用檔案內容覆蓋同 ID 的班級，其他班級不受影響。</div>
+            <div className="section-hint" style={{ marginBottom: 10 }}>建議定期匯出備份（含行事曆事件）。匯入時會覆蓋相同 ID 的班級，其他班級不受影響。</div>
             <div className="row-actions">
               <button className="btn-primary btn-sm" disabled={exporting} onClick={handleExport}>{exporting ? "匯出中…" : "匯出全部資料"}</button>
               <button className="btn-ghost btn-sm" onClick={() => fileInputRef.current && fileInputRef.current.click()}>選擇備份檔案</button>
@@ -1017,18 +1017,18 @@ function LessonVideosView({ classes, studentIndex }) {
       const ok = await saveKey(`attendance:${row.cls.id}`, next);
       if (!ok) throw new Error("save failed");
       setDatasets((current) => ({ ...current, [row.cls.id]: next }));
-      setMessage("影片連結已儲存；這筆紀錄仍會保留，方便日後修改。");
-    } catch { setMessage("影片連結儲存失敗，請確認網路後再試。"); }
+      setMessage("已儲存影片連結。");
+    } catch { setMessage("儲存失敗，請確認網路後再試。"); }
     finally { setSaving(""); }
   }
 
   return <div className="view-pad lesson-videos-view">
-    <div className="section-head"><div><h2 className="page-title">上課影片</h2><div className="section-hint">列出指定期間內有請假或曠課的班級紀錄；影片連結沿用原上課日的「當日錄影連結」。</div></div><span className="tag tag-muted">共 {rows.length} 班日紀錄</span></div>
+    <div className="section-head"><div><h2 className="page-title">上課影片</h2><div className="section-hint">請假、曠課紀錄；影片連結即該日的錄影連結。</div></div><span className="tag tag-muted">{rows.length} 筆</span></div>
     <div className="lesson-videos-toolbar"><label>開始日期<DateField value={from} onChange={setFrom} clearable placeholder="不限開始日" aria-label="開始日期" /></label><label>結束日期<DateField value={to} onChange={setTo} clearable placeholder="不限結束日" aria-label="結束日期" /></label><label>班級<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="all">全部班級</option>{classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label></div>
     {message && <div className="backup-warning lesson-videos-message">{message}</div>}
-    {status === "loading" && <div className="empty-note">正在讀取缺課紀錄…</div>}
-    {status === "error" && <div className="load-error-banner">讀取上課影片清單失敗，請重新整理頁面後再試。</div>}
-    {status === "ready" && !rows.length && <div className="empty-note">這段期間沒有請假或曠課紀錄。</div>}
+    {status === "loading" && <div className="empty-note">讀取中…</div>}
+    {status === "error" && <div className="load-error-banner">讀取失敗，請重新整理。</div>}
+    {status === "ready" && !rows.length && <div className="empty-note">此期間沒有缺課紀錄。</div>}
     {status === "ready" && rows.length > 0 && <div className="lesson-video-list">{rows.map((row) => <LessonVideoRow key={row.key} row={row} studentIndex={studentIndex} saving={saving === row.key} onSave={saveVideo} />)}</div>}
   </div>;
 }
@@ -1036,7 +1036,7 @@ function LessonVideosView({ classes, studentIndex }) {
 function LessonVideoRow({ row, studentIndex, saving, onSave }) {
   const [value, setValue] = useState(row.day.videoUrl || "");
   useEffect(() => setValue(row.day.videoUrl || ""), [row.day.videoUrl]);
-  return <article className="lesson-video-card"><div className="lesson-video-card-head"><div><strong>{formatDisplay(row.date)}</strong><span>{row.cls.name}</span></div><span className={value ? "tag tag-good" : "tag tag-warn"}>{value ? "已填影片" : "尚未填寫"}</span></div><div className="lesson-video-students"><span>缺課學生：</span>{row.absent.map(([studentId, raw]) => { const student = row.cls.students.find((item) => item.id === studentId); const display = student ? studentDisplay(student, studentIndex, row.cls) : { name: studentId }; return <span className="lesson-video-student" key={studentId}>{display.name}（{normalizeAttendanceStatus(raw).filter((item) => item === "請假" || item === "曠課").join("、")}）</span>; })}</div><div className="lesson-video-form"><input type="url" value={value} onChange={(e) => setValue(e.target.value)} placeholder="貼上這一天共用的上課影片連結" /><button className="btn-primary btn-sm" disabled={saving} onClick={() => onSave(row, value)}>{saving ? "儲存中…" : "儲存連結"}</button>{value && /^https?:\/\//i.test(value) && <a href={value} target="_blank" rel="noreferrer">開啟影片</a>}</div></article>;
+  return <article className="lesson-video-card"><div className="lesson-video-card-head"><div><strong>{formatDisplay(row.date)}</strong><span>{row.cls.name}</span></div><span className={value ? "tag tag-good" : "tag tag-warn"}>{value ? "已填影片" : "尚未填寫"}</span></div><div className="lesson-video-students"><span>缺課學生：</span>{row.absent.map(([studentId, raw]) => { const student = row.cls.students.find((item) => item.id === studentId); const display = student ? studentDisplay(student, studentIndex, row.cls) : { name: studentId }; return <span className="lesson-video-student" key={studentId}>{display.name}（{normalizeAttendanceStatus(raw).filter((item) => item === "請假" || item === "曠課").join("、")}）</span>; })}</div><div className="lesson-video-form"><input type="url" value={value} onChange={(e) => setValue(e.target.value)} placeholder="貼上影片連結" /><button className="btn-primary btn-sm" disabled={saving} onClick={() => onSave(row, value)}>{saving ? "儲存中…" : "儲存連結"}</button>{value && /^https?:\/\//i.test(value) && <a href={value} target="_blank" rel="noreferrer">開啟影片</a>}</div></article>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1050,13 +1050,7 @@ function TopNav({ view, setView, saveStatus, backupOverdue, onToggleBackup }) {
         <img className="brand-mark" src={`${import.meta.env.BASE_URL}app-icon.png`} alt="" aria-hidden="true" />
         <div>
           <div className="brand-text">教學紀錄</div>
-          <div className="brand-caption">一人教師工作台</div>
         </div>
-      </div>
-      <div className="topnav-middle">
-        <span className="topnav-breadcrumb">今日工作區</span>
-        <span className="topnav-dot" />
-        <span className="topnav-note">把每一堂課，整理成看得見的進步</span>
       </div>
       <nav className="nav-pills" aria-label="主要導覽">
         <button className={"pill nav-pill" + (view === "today" ? " pill-active" : "")} onClick={() => setView("today")}><CalendarDays size={15} />行事曆</button>
@@ -1181,7 +1175,6 @@ function MonthCalendar({ selected, onSelect, classes, hasSession, calendarEvents
     <div className={"calendar calendar-shell calendar-view-" + viewMode}>
       <div className="calendar-header">
         <div className="calendar-title-group">
-          <div className="calendar-kicker">教學節奏</div>
           <IconBtn title={viewMode === "month" ? "上個月" : "上一週"} onClick={() => viewMode === "month" ? changeMonth(-1) : changeWeek(-1)}><ChevronLeft size={18} /></IconBtn>
           <div className="calendar-title">{title}</div>
           <IconBtn title={viewMode === "month" ? "下個月" : "下一週"} onClick={() => viewMode === "month" ? changeMonth(1) : changeWeek(1)}><ChevronRight size={18} /></IconBtn>
@@ -1326,32 +1319,22 @@ function TodayView({ classes, onOpenClass, calendarEvents, onAddCalendarEvent, o
 
   return (
     <div className="view-pad today-page">
-      <section className="today-hero">
-        <div className="hero-copy">
-          <div className="page-kicker"><span className="kicker-dot" />{formatDisplay(selected)} · 教學工作區</div>
-          <h1>今天，先看見課堂的節奏。</h1>
-          <p>用一張行事曆掌握上課班級、學生狀況與重要日程。點選日期，就能接著進入點名。</p>
-        </div>
-        <div className="hero-sticker" aria-hidden="true"><span>好好<br />教學</span><small>TEACH<br />WITH CARE</small></div>
-      </section>
-      <section className="today-metrics" aria-label="今日摘要">
-        <div className="metric-card metric-card-coral"><span>今日課堂</span><strong>{courseCount}</strong><em>個班級</em></div>
-        <div className="metric-card metric-card-teal"><span>目前學生</span><strong>{studentTotal}</strong><em>位學習者</em></div>
-        <div className="metric-card metric-card-blue"><span>日程提醒</span><strong>{eventCount}</strong><em>{eventCount ? "項待查看" : "今天很清爽"}</em></div>
-        <div className="metric-note"><CalendarDays size={20} /><div><strong>先選一天</strong><span>再從下方班級進入點名與紀錄</span></div></div>
+      <section className="today-head" aria-label="當日摘要">
+        <h1>{formatDisplay(selected)}</h1>
+        <div className="today-summary"><span>課程<b>{courseCount}</b>班</span><span>學生<b>{studentTotal}</b>人</span>{eventCount > 0 && <span>事件<b>{eventCount}</b>項</span>}</div>
       </section>
       <MonthCalendar selected={selected} onSelect={setSelected} classes={classes} hasSession={hasSession} calendarEvents={calendarEvents} onAddEvent={onAddCalendarEvent} knownSchools={knownSchools} calendarSaveState={calendarSaveState} />
       {selectedDayEvents.length > 0 && <CalendarEventsPanel date={selected} events={calendarEvents} onDelete={onDeleteCalendarEvent} onEdit={onEditCalendarEvent} knownSchools={knownSchools} />}
-      <div className="section-heading-row"><div><div className="section-label">{formatDisplay(selected)} 的上課班級</div><div className="section-hint">點選班級即可直接開始點名</div></div><span className="section-count">{courseCount} 個班級</span></div>
-      {matches.length === 0 && <div className="empty-note empty-note-card">這天沒有排定的課。可以利用「新增事件」記下其他重要日程。</div>}
+      <div className="section-heading-row"><div className="section-label">上課班級</div><span className="section-count">{courseCount} 班</span></div>
+      {matches.length === 0 && <div className="empty-note empty-note-card">當日沒有課程。</div>}
       <div className="card-list">{matches.map(({ c, time }) => (
         <button key={c.id} className="class-card class-card-vivid" onClick={() => onOpenClass(c.id, "attendance", selected)}>
           <div className="class-card-ribbon" style={{ background: colorForClass(c.id) }} />
-          <div className="class-card-body"><div className="class-card-title">{c.name}</div><div className="class-card-sub">{c.subject}{c.grade ? " · " + c.grade : ""} · {activeStudentCount(c)} 位學生</div></div>
+          <div className="class-card-body"><div className="class-card-title">{c.name}</div><div className="class-card-sub">{c.subject}{c.grade ? " · " + c.grade : ""} · {activeStudentCount(c)} 人</div></div>
           {time && <div className="class-card-time"><Clock size={13} /> {time}</div>}<ChevronRight size={18} color="#8792A2" />
         </button>
       ))}</div>
-      {classes.length === 0 && <div className="empty-state">還沒有任何班級。到「所有班級」新增第一個班級吧。</div>}
+      {classes.length === 0 && <div className="empty-state">尚無班級，請至「所有班級」新增。</div>}
     </div>
   );
 }
@@ -1400,7 +1383,7 @@ function ClassesView({ classes, showArchived, setShowArchived, onOpenClass, onAd
             <div className="class-card-dot" style={{ background: colorForClass(c.id) }} />
             <button className="class-card-body class-card-clickable" onClick={() => onOpenClass(c.id)}>
               <div className="class-card-title">{c.name}</div>
-              <div className="class-card-sub">{c.subject}{c.grade ? ` · ${c.grade}` : ""} · {activeStudentCount(c)} 位學生 · {scheduleSummary(c)}</div>
+              <div className="class-card-sub">{c.subject}{c.grade ? ` · ${c.grade}` : ""} · {activeStudentCount(c)} 人 · {scheduleSummary(c)}</div>
             </button>
             <div className="row-actions">
               <IconBtn title={showArchived ? "還原" : "封存"} onClick={() => onArchive(c.id, !showArchived)}>
@@ -1412,7 +1395,7 @@ function ClassesView({ classes, showArchived, setShowArchived, onOpenClass, onAd
             </div>
           </div>
         ))}
-        {list.length === 0 && <div className="empty-note">{showArchived ? "沒有已封存的班級。" : "還沒有進行中的班級。"}</div>}
+        {list.length === 0 && <div className="empty-note">{showArchived ? "沒有已封存的班級。" : "沒有進行中的班級。"}</div>}
       </div>
     </div>
   );
@@ -1435,11 +1418,11 @@ function PasteImport({ onImport }) {
   }
 
   if (!open) {
-    return <button className="btn-ghost btn-xs" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>選檔案沒反應？改成貼上備份內容</button>;
+    return <button className="btn-ghost btn-xs" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>改用貼上備份內容</button>;
   }
   return (
     <div style={{ marginTop: 10 }}>
-      <div className="section-hint" style={{ marginBottom: 6 }}>用文字編輯器打開備份 .json 檔案，全選複製內容，貼在下面：</div>
+      <div className="section-hint" style={{ marginBottom: 6 }}>貼上備份檔（.json）的全部內容：</div>
       <textarea className="journal-textarea" style={{ width: "100%", minHeight: 100 }} value={text} onChange={(e) => setText(e.target.value)} placeholder="貼上備份 JSON 內容…" />
       <div className="form-actions">
         <button className="btn-ghost" onClick={() => { setOpen(false); setText(""); }}>取消</button>
@@ -1472,10 +1455,10 @@ function NewClassForm({ onCancel, onCreate }) {
         <label className="field"><span>班級名稱</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：高一物化" /></label>
         <label className="field"><span>科目</span><input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="例：物理化學" /></label>
         <label className="field"><span>年級</span><input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="例：高一" /></label>
-        <label className="field"><span>分科目（選填，逗號分隔，例：物理,化學）</span><input value={subjectsText} onChange={(e) => setSubjectsText(e.target.value)} placeholder="留空表示不分科" /></label>
+        <label className="field"><span>分科目（選填，以逗號分隔）</span><input value={subjectsText} onChange={(e) => setSubjectsText(e.target.value)} placeholder="例：物理,化學" /></label>
         <label className="field field-checkbox">
           <input type="checkbox" checked={hasFee} onChange={(e) => setHasFee(e.target.checked)} />
-          <span>需要記錄收費（自行收費班級）</span>
+          <span>記錄收費</span>
         </label>
       </div>
       <div className="form-actions">
@@ -1581,10 +1564,10 @@ function AttendanceStatusEditor({ studentName, value, onChange, onSave, onClear,
   return (
     <div className="attendance-editor-panel" role="dialog" aria-label={`${studentName}出缺勤紀錄編輯`}>
       <div className="attendance-editor-heading">
-        <div><strong>{studentName}</strong><span>修改這一天的出缺勤狀態</span></div>
+        <div><strong>{studentName}</strong><span>修改出缺勤</span></div>
         <button type="button" className="icon-btn" onClick={onCancel} title="關閉編輯" aria-label="關閉編輯"><X size={15} /></button>
       </div>
-      {anomalyReason && <div className="attendance-editor-warning"><strong>這筆資料被判定為異常：{anomalyReason}</strong><span>這裡沒有「停班」出缺勤狀態；若學生的停班／停課設定正確，請直接清除這筆紀錄。只有在確認判定或學生資料錯誤時，才改選正確狀態後儲存。</span></div>}
+      {anomalyReason && <div className="attendance-editor-warning"><strong>這筆資料被判定為異常：{anomalyReason}</strong><span>沒有「停班」狀態。停班設定正確時請清除此筆紀錄；判定有誤才改選狀態。</span></div>}
       <div className="attendance-editor-options">
         {ATTENDANCE_STATUSES.map((status) => {
           const isModifier = ATTENDANCE_MODIFIER_STATUSES.includes(status);
@@ -1606,7 +1589,7 @@ function AttendanceStatusEditor({ studentName, value, onChange, onSave, onClear,
           );
         })}
       </div>
-      <div className="attendance-editor-hint">基礎狀態擇一；遲到、早退只有在出席時可同時勾選。</div>
+      <div className="attendance-editor-hint">狀態擇一；遲到、早退僅限出席時加註。</div>
       <div className="form-actions attendance-editor-actions">
         <button type="button" className={anomalyReason ? "btn-danger btn-sm" : "btn-ghost btn-xs"} onClick={onClear}>{anomalyReason ? "清除這筆異常紀錄" : "清除紀錄"}</button>
         <span />
@@ -1804,7 +1787,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           )}
 
           <label className="field" style={{ marginTop: 10 }}>
-            <span>教學日誌內容（完成輸入後點到其他欄位才儲存）</span>
+            <span>教學日誌（離開欄位後儲存）</span>
             <textarea className="journal-textarea" value={journalDraft.content} onChange={(e) => setJournalDraft((draft) => ({ ...draft, content: e.target.value }))} onBlur={() => saveJournalField("content")} placeholder="例：CH2 2-1～2-2、講義 p12-15…" rows={2} />
           </label>
           <label className="field" style={{ marginTop: 8 }}>
@@ -1813,12 +1796,12 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
           </label>
           <label className="field" style={{ marginTop: 8 }}>
             <span>當日錄影連結（選填）</span>
-            <input type="url" value={journalDraft.videoUrl} onChange={(e) => setJournalDraft((draft) => ({ ...draft, videoUrl: e.target.value }))} onBlur={() => saveJournalField("videoUrl")} placeholder="貼上 Google Drive、YouTube 或其他錄影連結" />
+            <input type="url" value={journalDraft.videoUrl} onChange={(e) => setJournalDraft((draft) => ({ ...draft, videoUrl: e.target.value }))} onBlur={() => saveJournalField("videoUrl")} placeholder="貼上錄影連結" />
           </label>
           {dayData.videoUrl && /^https?:\/\//i.test(dayData.videoUrl) && <div className="journal-video-link"><a href={dayData.videoUrl} target="_blank" rel="noreferrer">開啟當日錄影</a></div>}
 
           {cls.students.length === 0 ? (
-            <div className="empty-note">尚未新增學生，請至「學生與課表」分頁新增。</div>
+            <div className="empty-note">尚無學生，請至「學生與課表」新增。</div>
           ) : (
             <div className="roll-list">
               {cls.students
@@ -1853,7 +1836,7 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
                         );
                       })}
                     </div>
-                    <ConfirmAction label={`確定將 ${displayStudent.name} 標記為停班？往後就不會再出現在出席表裡。`} confirmText="確定停班" onConfirm={() => markStopped(s.id)}><Archive size={14} /> 停班</ConfirmAction>
+                    <ConfirmAction label={`將 ${displayStudent.name} 標記為停班？停班後不再出現在點名表。`} confirmText="確定停班" onConfirm={() => markStopped(s.id)}><Archive size={14} /> 停班</ConfirmAction>
                   </div>
                 );
               })}
@@ -1929,7 +1912,7 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
   }
 
   if (cls.students.length === 0) {
-    return <div className="empty-note" style={{ marginTop: 12 }}>尚未新增學生，請至「學生與課表」分頁新增。</div>;
+    return <div className="empty-note" style={{ marginTop: 12 }}>尚無學生，請至「學生與課表」新增。</div>;
   }
 
   const editingStudent = editingCell ? cls.students.find((student) => student.id === editingCell.studentId) : null;
@@ -1939,23 +1922,19 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
   return (
     <div className="attendance-overview">
       <div className="attendance-overview-heading">
-        <div>
-          <div className="section-hint">出缺勤總覽</div>
-          <div className="attendance-overview-title">快速看出席，也找出異常</div>
-        </div>
-        <span className="section-hint">底部保留橫向矩陣；點擊異常資料可直接修改</span>
+        <div className="attendance-overview-title">出缺勤總覽</div>
       </div>
       <div className="attendance-metric-grid">
-        <AttendanceMetric label="紀錄日期" value={`${dates.length} 天`} detail="已有學生狀態的日期" tone="primary" />
+        <AttendanceMetric label="紀錄日期" value={`${dates.length} 天`} detail="有紀錄的日期" tone="primary" />
         <AttendanceMetric label="出席率" value={attendanceRate === null ? "—" : `${attendanceRate}%`} detail="出席／有效課次" tone="positive" />
-        <AttendanceMetric label="遲到" value={`${overall.遲到} 次`} detail="可與出席並存" tone={overall.遲到 ? "warning" : "positive"} />
-        <AttendanceMetric label="早退" value={`${overall.早退} 次`} detail="可與出席並存" tone={overall.早退 ? "warning" : "positive"} />
-        <AttendanceMetric label="請假／曠課" value={`${overall.請假} / ${overall.曠課}`} detail="學生日次" tone={overall.曠課 ? "danger" : ""} />
-        <AttendanceMetric label="待檢視異常日" value={`${anomalyRows.length} 天`} detail="可從時間軸跳轉" tone={anomalyRows.length ? "warning" : "positive"} />
+        <AttendanceMetric label="遲到" value={`${overall.遲到} 次`} detail="含於出席" tone={overall.遲到 ? "warning" : "positive"} />
+        <AttendanceMetric label="早退" value={`${overall.早退} 次`} detail="含於出席" tone={overall.早退 ? "warning" : "positive"} />
+        <AttendanceMetric label="請假／曠課" value={`${overall.請假} / ${overall.曠課}`} detail="人次" tone={overall.曠課 ? "danger" : ""} />
+        <AttendanceMetric label="待檢視異常日" value={`${anomalyRows.length} 天`} detail="見下方異常日" tone={anomalyRows.length ? "warning" : "positive"} />
       </div>
 
       <div className="attendance-section-card">
-        <div className="attendance-section-heading"><div className="score-section-title">學生行為分析</div><span className="section-hint">比例分母為各學生有記錄的有效課次</span></div>
+        <div className="attendance-section-heading"><div className="score-section-title">各學生出缺勤</div><span className="section-hint">比例＝出席÷有效課次</span></div>
         <div className="attendance-student-grid">
           {studentStats.map((stat) => (
             <div className="attendance-student-card" key={stat.student.id}>
@@ -1974,7 +1953,7 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
       {anomalyRows.length > 0 && (
         <div className="attendance-section-card attendance-timeline-card">
           <div className="attendance-section-heading">
-            <div><div className="score-section-title">異常日</div><span className="section-hint">只列停課後、入班前、全班延課日的個人紀錄、未知狀態或名單外資料</span></div>
+            <div><div className="score-section-title">異常日</div><span className="section-hint">停課後、入班前、全班延課日仍有個人紀錄，或狀態未知、不在名單內</span></div>
             <span className="tag tag-bad">{anomalyRows.length} 天需檢查</span>
           </div>
           <div className="attendance-timeline-list">
@@ -2018,7 +1997,7 @@ function AttendanceOverview({ cls, data, studentIndex, onJump, onUpdateRecord })
 
       {visibleRows.length > 0 && (
         <div className="attendance-section-card attendance-matrix-card">
-          <div className="attendance-section-heading"><div><div className="score-section-title">上課情形矩陣</div><span className="section-hint">完整顯示所有有紀錄日期；固定日期與學生標頭，點擊任一格可直接修改或清除</span></div><span className="section-hint">顯示 {visibleRows.length} 個紀錄日</span></div>
+          <div className="attendance-section-heading"><div><div className="score-section-title">出缺勤表</div><span className="section-hint">點選格子可修改或清除</span></div><span className="section-hint">{visibleRows.length} 天</span></div>
           <div className="matrix-scroll">
             <table className="matrix attendance-matrix">
               <thead><tr><th className="matrix-corner">日期</th>{displayStudents.map((student) => <th key={student.id} className="matrix-col-head"><div className="matrix-col-name">{student.name}</div><div className="matrix-col-school">{formatStudentSchoolGroup(student) || "未填學校"}</div></th>)}</tr></thead>
@@ -2061,11 +2040,8 @@ function ScoreOverview({ unitLabel, classAvg, classMedian, classMax, classMin, p
   return (
     <div className="score-dashboard">
       <div className="score-dashboard-heading">
-        <div>
-          <div className="section-hint">{unitLabel}整體表現</div>
-          <div className="score-dashboard-title">看平均，也看分布與完成度</div>
-        </div>
-        <span className="score-dashboard-note">分數色帶以 100 分量尺顯示 · 人數依各次評量日期計算</span>
+        <div className="score-dashboard-title">{unitLabel}成績</div>
+        <span className="score-dashboard-note">滿分 100 · 人數依各次評量日期計算</span>
       </div>
       <div className="score-metric-grid">
         <ScoreMetric label="平均" value={fmtNum(classAvg)} detail="全班平均" tone="primary" />
@@ -2076,7 +2052,7 @@ function ScoreOverview({ unitLabel, classAvg, classMedian, classMax, classMin, p
       </div>
       <div className="score-distribution">
         <div className="score-section-title">分數分布</div>
-        {!hasScores ? <div className="empty-note">尚未填入分數。</div> : (
+        {!hasScores ? <div className="empty-note">尚無分數。</div> : (
           <div className="score-distribution-list">
             {scoreDistribution.map((band) => (
               <div className="score-distribution-row" key={band.key}>
@@ -2202,7 +2178,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
   }
 
   if (cls.students.length === 0) {
-    return <div className="empty-note" style={{ marginTop: 12 }}>尚未新增學生，請至「學生與課表」分頁新增。</div>;
+    return <div className="empty-note" style={{ marginTop: 12 }}>尚無學生，請至「學生與課表」新增。</div>;
   }
 
   const segments = withSegment ? Array.from(new Set(data.columns.map((c) => c.segment).filter(Boolean))) : [];
@@ -2415,7 +2391,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                 );
               })}
             </div>
-            <div className="section-hint" style={{ marginTop: 6 }}>變化：篩選範圍內第一次到最後一次的分數差；班均差：個人平均減全班平均。各欄的標準差可將游標移到學生姓名查看。</div>
+            <div className="section-hint" style={{ marginTop: 6 }}>變化＝最後一次減第一次；班均差＝個人平均減全班平均。</div>
           </div>
 
           <div className="chart-card">
@@ -2534,7 +2510,7 @@ function FeeTab({ cls }) {
   }
 
   if (cls.students.length === 0) {
-    return <div className="empty-note" style={{ marginTop: 12 }}>尚未新增學生，請至「學生與課表」分頁新增。</div>;
+    return <div className="empty-note" style={{ marginTop: 12 }}>尚無學生，請至「學生與課表」新增。</div>;
   }
 
   // Build per-student status so it's possible to see at a glance who has
@@ -2574,7 +2550,7 @@ function FeeTab({ cls }) {
   return (
     <div>
       <div className="row-between" style={{ marginTop: 10 }}>
-        <span className="section-hint">收費區間、金額、教材費、折扣，總金額自動計算</span>
+        <span />
         <div className="row-actions">
           <SaveIndicator status={saveState.status} onRetry={saveState.retry} />
           <button className="btn-primary btn-sm" onClick={() => setAdding(true)}><Plus size={16} /> 新增收費</button>
@@ -2654,7 +2630,7 @@ function FeeTab({ cls }) {
             </div>
           );
         })}
-        {sorted.length === 0 && <div className="empty-note">{data.charges.length === 0 ? "尚未新增任何收費紀錄。" : "沒有符合篩選條件的收費紀錄。"}</div>}
+        {sorted.length === 0 && <div className="empty-note">{data.charges.length === 0 ? "尚無收費紀錄。" : "沒有符合條件的紀錄。"}</div>}
       </div>
     </div>
   );
@@ -2801,7 +2777,7 @@ function OrphanRecovery({ cls, onUpdateClass, onPurgeStudent }) {
     <div className="panel panel-warning">
       <div className="panel-title"><Users size={15} /> 找到 {orphans.length} 位「消失的學生」紀錄</div>
       <div className="section-hint" style={{ marginBottom: 10 }}>
-        這些學生之前被永久刪除過，資料還在，只是名單上沒有人對應。幫每個 ID 填上姓名並按「還原」，所有分頁的歷史紀錄就會立刻接回來（會標記為「已停止上課」）。
+        以下 ID 的學生已被刪除，但紀錄仍在。填入姓名並按「還原」即可接回（狀態為已停止上課）。
       </div>
       {orphans.map((o) => (
         <div key={o.id} className="orphan-row">
@@ -2812,7 +2788,7 @@ function OrphanRecovery({ cls, onUpdateClass, onPurgeStudent }) {
             {o.feeCount > 0 && <span>收費 {o.feeCount} 筆</span>}
           </div>
           <div className="row-actions">
-            <input className="student-input" placeholder="這位是誰？輸入姓名" value={names[o.id] || ""} onChange={(e) => setNames((prev) => ({ ...prev, [o.id]: e.target.value }))} />
+            <input className="student-input" placeholder="姓名" value={names[o.id] || ""} onChange={(e) => setNames((prev) => ({ ...prev, [o.id]: e.target.value }))} />
             <button className="btn-primary btn-sm" onClick={() => restore(o)}>還原</button>
             <ConfirmDelete
               buttonLabel={purgingId === o.id ? "清除中…" : "永久清除全部紀錄"}
@@ -2845,7 +2821,7 @@ function ClassInfoEditor({ cls, onUpdateClass }) {
   return (
     <div className="panel">
       <div className="panel-title"><Pencil size={15} /> 班級資訊</div>
-      <div className="section-hint" style={{ marginBottom: 8 }}>升學年後（例如國一變國二、高一變高二），可以直接在這裡改班級名稱，歷史紀錄不會受影響。</div>
+      <div className="section-hint" style={{ marginBottom: 8 }}>班級名稱可直接修改（如升學年），歷史紀錄不受影響。</div>
       <div className="form-grid">
         <label className="field"><span>班級名稱</span><input value={name} onChange={(e) => setName(e.target.value)} onBlur={save} /></label>
         <label className="field"><span>科目</span><input value={subject} onChange={(e) => setSubject(e.target.value)} onBlur={save} /></label>
@@ -2880,7 +2856,7 @@ function SchoolField({ value, onChange, knownSchools }) {
       <option value="">（未選擇學校）</option>
       {value && !knownSchools.includes(value) && <option value={value}>{value}</option>}
       {knownSchools.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
-      <option value="__new__">➕ 新增學校…</option>
+      <option value="__new__">新增學校…</option>
     </select>
   );
 }
@@ -2940,11 +2916,11 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
               {STUDENT_GROUPS.map((option) => <option key={option || "none"} value={option}>{option || "未分組／不適用"}</option>)}
             </select>
             <div className="roster-actions">
-              {s.endDate && <button className="btn-ghost btn-xs" title="若先前是誤按停班，可移除停班與復課日期；若要保留離班歷史，請不要按此鈕" onClick={() => cancelStop(s.id)}>撤銷停班紀錄</button>}
-              <button className="btn-ghost btn-xs" title="試聽滿兩堂後會自動轉為班內生；這裡可以提前手動轉正，或反向手動延長試聽" onClick={() => toggleForce(s.id, membership)}>
+              {s.endDate && <button className="btn-ghost btn-xs" title="清除停班日期（誤按停班時使用）" onClick={() => cancelStop(s.id)}>撤銷停班紀錄</button>}
+              <button className="btn-ghost btn-xs" title="試聽滿兩堂自動轉為班內生；可手動提前轉正或延長試聽" onClick={() => toggleForce(s.id, membership)}>
                 {membership === "trial" ? <><span className="trial-tag">試</span>轉為班內生</> : "設為試聽生"}
               </button>
-              <ConfirmAction label={`確定將 ${displayStudent.name} 標記為停班？往後就不會再出現在出席表裡（歷史紀錄仍會保留）。`} confirmText="確定停班" onConfirm={() => stop(s.id)}>
+              <ConfirmAction label={`將 ${displayStudent.name} 標記為停班？不再出現在點名表，歷史紀錄保留。`} confirmText="確定停班" onConfirm={() => stop(s.id)}>
                 <Archive size={13} /> 停班
               </ConfirmAction>
             </div>
@@ -2969,7 +2945,7 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
       {stopped.length > 0 && (
         <>
           <div className="section-hint" style={{ marginTop: 14, marginBottom: 6 }}>
-            已停班（不會出現在出缺勤名單，但平時考/段考/總覽的歷史紀錄仍會保留）。若是誤按停班，請按「撤銷停班」；若是實際離班後回來，才按「今天復課」，不要另外新增同名學生。
+            已停班（不在點名表，歷史紀錄保留）。誤按請「撤銷停班」；離班後回來請「今天復課」，不要重複新增同名學生。
           </div>
           {stopped.map((s) => {
             const displayStudent = studentDisplay(s, studentIndex, cls);
@@ -2982,8 +2958,8 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
                 </select>
                 <div className="roster-actions">
                   <span className="student-inactive-date">{s.endDate ? `停班於 ${fmtDate(s.endDate, { weekday: false })}` : ""}</span>
-                  <button className="btn-primary btn-xs" title="誤按停班時清除停班日期，保留原本學生 ID 與歷史紀錄" onClick={() => cancelStop(s.id)}>撤銷停班</button>
-                  <button className="btn-ghost btn-xs" title="保留停班歷史，從今天開始復課" onClick={() => reactivate(s.id)}>今天復課</button>
+                  <button className="btn-primary btn-xs" title="清除停班日期（誤按時使用）" onClick={() => cancelStop(s.id)}>撤銷停班</button>
+                  <button className="btn-ghost btn-xs" title="從今天起復課" onClick={() => reactivate(s.id)}>今天復課</button>
                   <ConfirmDelete label={`永久刪除${displayStudent.name}的所有資料？`} onConfirm={() => removePermanently(s.id)} />
                 </div>
               </div>
@@ -3011,12 +2987,12 @@ function SubjectEditor({ cls, onUpdateClass }) {
   return (
     <div className="panel">
       <div className="panel-title"><CircleDot size={15} /> 分科設定</div>
-      <div className="section-hint" style={{ marginBottom: 8 }}>若這個班同時上多個科目（例如物理＋化學），在這裡新增科目標籤，平時考／段考就能分開統計。</div>
+      <div className="section-hint" style={{ marginBottom: 8 }}>同班有多個科目時在此新增，平時考／段考會依科目分開統計。</div>
       <div className="chip-row" style={{ marginBottom: 8 }}>
         {subjects.map((sub) => (
           <span key={sub} className="chip chip-removable">{sub}<button onClick={() => remove(sub)} aria-label={`移除 ${sub}`} title={`移除 ${sub}`}><X size={12} /></button></span>
         ))}
-        {subjects.length === 0 && <span className="empty-note">尚未設定分科（成績將視為單一科目）</span>}
+        {subjects.length === 0 && <span className="empty-note">未分科</span>}
       </div>
       <div className="student-row">
         <input className="student-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="新增科目，例：物理" />
@@ -3078,7 +3054,7 @@ function ScheduleEditor({ cls, onUpdateClass }) {
             </div>
           );
         })}
-        {(cls.scheduleRules || []).length === 0 && <div className="empty-note">尚未設定課表規則。</div>}
+        {(cls.scheduleRules || []).length === 0 && <div className="empty-note">尚無課表規則。</div>}
       </div>
 
       {adding ? (
@@ -3110,7 +3086,7 @@ function ScheduleEditor({ cls, onUpdateClass }) {
       ) : (
         <button className="btn-primary btn-sm" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><Plus size={16} /> 新增排課規則</button>
       )}
-      <div className="hint-block">調整課表時，建議把「生效起始日」設為未來日期，並幫舊規則填上「生效結束日」——這樣過去已經記錄的出缺勤、成績都不會被更動。</div>
+      <div className="hint-block">調整課表：新規則的生效起始日設為未來日期，並為舊規則填生效結束日，過去的紀錄才不會被改動。</div>
     </div>
   );
 }
@@ -3247,7 +3223,6 @@ ${THEME_VARS_CSS}
 
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-
 
 .icon-btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); flex-shrink: 0; }
 .icon-btn-danger { color: #B23A34; }
@@ -3563,34 +3538,14 @@ button:active { transform: scale(.98); }
 .brand { gap: 10px; min-width: 180px; }
 .brand-mark { width: 40px; height: 40px; border-radius: 12px 12px 12px 4px; padding: 2px; object-fit: contain; background: linear-gradient(145deg, var(--coral), #F7B36D); box-shadow: 0 8px 15px rgba(242,125,114,.26); transform: rotate(-5deg); }
 .brand-text { color: var(--ink); font-family: 'Noto Sans TC', sans-serif; font-size: 17px; letter-spacing: .04em; }
-.brand-caption { color: #9CA8BA; font-size: 11px; letter-spacing: .16em; margin-top: 2px; }
-.topnav-middle { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 150px; color: #99A4B6; font-size: 12px; }
-.topnav-breadcrumb { color: var(--ink); font-weight: 700; }
-.topnav-dot, .kicker-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); display: inline-block; box-shadow: 0 0 0 4px rgba(65,179,163,.12); }
 .nav-pills { gap: 6px; }
 .nav-pill { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 9px 13px; color: #7B8799; }
 .nav-pill.pill-active { background: #EEF0FF; color: var(--blue); }
 .utility-pill { padding: 8px 11px; color: #8290A4; }
 .pill-warning { background: #FFF0D8 !important; color: #B8791B !important; }
 .view-pad { position: relative; z-index: 1; max-width: 1240px; padding: 28px clamp(18px, 4vw, 48px) 56px; }
-.today-hero { display: flex; justify-content: space-between; align-items: center; gap: 28px; padding: 30px 34px; margin-bottom: 18px; border-radius: 28px; background: linear-gradient(120deg, #FFF6EC 0%, #FFFDF8 58%, #ECF9F7 100%); border: 1px solid rgba(255,255,255,.8); box-shadow: var(--shadow-soft); overflow: hidden; }
-.page-kicker { display: flex; align-items: center; gap: 9px; color: #E28A46; font-size: 12px; font-weight: 700; letter-spacing: .08em; }
-.hero-copy h1 { margin: 10px 0 8px; max-width: 680px; color: var(--ink); font-size: clamp(25px, 4vw, 39px); line-height: 1.25; letter-spacing: -.04em; }
-.hero-copy p { max-width: 620px; margin: 0; color: #78869A; font-size: 14px; line-height: 1.8; }
-.hero-sticker { width: 128px; height: 128px; flex: 0 0 auto; display: grid; place-items: center; align-content: center; gap: 6px; color: #FFFFFF; text-align: center; background: linear-gradient(145deg, var(--teal), #64CBBB); border-radius: 45% 55% 48% 52%; transform: rotate(7deg); box-shadow: 0 14px 24px rgba(65,179,163,.22); }
-.hero-sticker span { font-size: 20px; font-weight: 700; line-height: 1.25; }
-.hero-sticker small { font: 700 8px/1.3 'IBM Plex Mono', monospace; letter-spacing: .12em; opacity: .72; }
-.today-metrics { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)) minmax(200px, 1.5fr); gap: 12px; margin-bottom: 22px; }
-.metric-card, .metric-note { min-height: 108px; padding: 17px 18px; border-radius: 18px; box-shadow: var(--shadow-soft); }
-.metric-card { display: grid; grid-template-columns: 1fr auto; align-items: end; border: 1px solid rgba(255,255,255,.75); }
-.metric-card span { grid-column: 1/-1; color: rgba(36,48,71,.72); font-size: 12px; font-weight: 700; }
-.metric-card strong { color: var(--ink); font: 700 32px/1 'IBM Plex Mono', monospace; margin-top: 13px; }
-.metric-card em { align-self: end; color: rgba(36,48,71,.62); font-size: 11px; font-style: normal; }
-.metric-card-coral { background: #FFE8E2; }.metric-card-teal { background: #DFF6F0; }.metric-card-blue { background: #E9EDFF; }
-.metric-note { display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px dashed #CBD5E5; color: var(--blue); }
-.metric-note div { display: flex; flex-direction: column; gap: 4px; }.metric-note strong { color: var(--ink); font-size: 13px; }.metric-note span { color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
 .calendar-shell { border: 0; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-soft); }
-.calendar-header { margin-bottom: 18px; }.calendar-title-group { gap: 8px; }.calendar-kicker { color: #9CA8BA; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; margin-right: 6px; }.calendar-title { color: var(--ink); font-size: 19px; letter-spacing: -.02em; }
+.calendar-header { margin-bottom: 18px; }.calendar-title-group { gap: 8px; }.calendar-title { color: var(--ink); font-size: 19px; letter-spacing: -.02em; }
 .calendar-header-actions { gap: 9px; }.calendar-view-switch { display: inline-flex; padding: 3px; border-radius: 10px; background: #F0F3F9; }.calendar-view-switch button { border: 0; border-radius: 6px; padding: 6px 10px; color: #8792A2; background: transparent; font: 700 11px 'Noto Sans TC', sans-serif; cursor: pointer; }.calendar-view-switch button.active { color: var(--blue); background: white; box-shadow: 0 3px 8px rgba(49,62,92,.12); }
 .calendar-weekdays { color: #9CA8BA; font-weight: 700; }.calendar-wd:first-child, .calendar-wd:last-child { color: var(--coral); }.calendar-grid { gap: 6px; }.calendar-cell { min-height: 98px; padding: 8px 6px 6px; border-radius: 14px; background: #FBFCFE; border: 1px solid #F0F2F7; }.calendar-cell:hover { background: #F4F6FF; border-color: #DCE2FA; transform: translateY(-1px); }.calendar-cell-selected { background: #EEF0FF !important; border-color: #98A7F1 !important; box-shadow: inset 0 0 0 1px #98A7F1; }.calendar-cell-holiday { background: #FFF4F1; color: #D9675D; }.calendar-cell-today { box-shadow: 0 0 0 2px #F4B26E, 0 5px 12px rgba(242,166,90,.12); border-color: #F4B26E; }.calendar-cell-topline { display: flex; align-items: center; justify-content: center; gap: 5px; }.calendar-cell-num { color: var(--ink); font-size: 13px; font-weight: 700; }.today-badge { padding: 2px 4px; border-radius: 6px; color: #FFFFFF; background: var(--coral); font-size: 11px; font-weight: 700; }.calendar-cell-dots { margin-top: 4px; }.dot { width: 6px; height: 6px; }.calendar-event-label { padding: 3px 4px; border-radius: 6px; font-size: 11px; font-weight: 700; }.calendar-event-label-range { background: #F1EEFF !important; }.calendar-event-more { font-weight: 700; }
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: start; }.week-column { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 0; min-height: 310px; padding: 0; border: 1px solid #E9EDF5; border-radius: 14px; background: #FBFCFE; overflow: hidden; text-align: left; cursor: pointer; }.week-column:hover { border-color: #B9C5F7; transform: translateY(-2px); }.week-column-selected { border: 2px solid #8E9FF0; background: #F2F4FF; }.week-column-today { box-shadow: 0 0 0 2px #F4B26E; }.week-column-head { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 11px 6px 10px; color: #8490A3; background: #F1F4FA; font-size: 11px; }.week-column-head strong { color: var(--ink); font: 700 16px 'IBM Plex Mono', monospace; }.week-column-head em { color: var(--coral); font-size: 11px; font-style: normal; font-weight: 700; }.week-column-body { display: flex; flex: 1; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 7px; padding: 10px; }.week-class, .week-event { display: flex; flex-direction: column; gap: 3px; padding: 8px 8px 8px 10px; border-left: 4px solid; border-radius: 6px; background: #FFFFFF; box-shadow: 0 4px 9px rgba(49,62,92,.06); }.week-class b, .week-event b { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.week-class small, .week-event small { overflow: hidden; color: var(--ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.week-empty { padding: 0 4px 12px; color: #B4BECC; font-size: 11px; text-align: center; }
@@ -3599,8 +3554,8 @@ button:active { transform: scale(.98); }
 .calendar-events-panel, .form-card, .panel, .fee-card { border: 0; box-shadow: var(--shadow-soft); }.section-label, .form-title, .panel-title { color: var(--ink); }.section-label { font-size: 17px; }.btn-ghost:hover, .icon-btn:hover { border-color: #AAB7EF; color: var(--blue); background: #F5F6FF; }.icon-btn { border-color: #E0E6F0; background: #FFFFFF; }
 .form-card, .calendar-events-panel { border-radius: 18px; }.field input, .field select, .student-input { border-color: #E1E6F0; }.field input:focus, .field select:focus, .student-input:focus { outline: none; border-color: #91A0EE; box-shadow: 0 0 0 4px rgba(97,119,232,.12); }
 .toast { background: var(--ink); box-shadow: var(--shadow-lift); }.backup-warning { background: #FFF1D9; border-color: #F5D39B; }.detail-title { color: var(--ink); }.tab-active { color: var(--blue); border-bottom-color: var(--blue); }
-@media (max-width: 860px) { .topnav { gap: 12px; }.topnav-middle { order: 3; flex-basis: 100%; }.today-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.metric-note { grid-column: span 2; } }
-@media (max-width: 720px) { .view-pad { padding: 18px 12px 42px; }.today-hero { align-items: flex-start; padding: 23px 20px; }.hero-sticker { width: 86px; height: 86px; }.hero-sticker span { font-size: 15px; }.hero-copy p { font-size: 13px; }.calendar-shell { padding: 12px; }.calendar-header { align-items: flex-start; flex-direction: column; }.calendar-header-actions { width: 100%; flex-wrap: wrap; }.week-grid { overflow-x: auto; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding-bottom: 6px; }.week-column { min-height: 260px; }.today-metrics { gap: 8px; }.metric-card { min-height: 92px; padding: 13px; }.metric-card strong { font-size: 26px; } }
+@media (max-width: 860px) { .topnav { gap: 12px; } }
+@media (max-width: 720px) { .view-pad { padding: 18px 12px 42px; }.calendar-shell { padding: 12px; }.calendar-header { align-items: flex-start; flex-direction: column; }.calendar-header-actions { width: 100%; flex-wrap: wrap; }.week-grid { overflow-x: auto; grid-template-columns: repeat(7, minmax(120px, 1fr)); padding-bottom: 6px; }.week-column { min-height: 260px; } }
 .lesson-videos-view{max-width:1120px}.lesson-videos-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.lesson-videos-toolbar label{display:grid;gap:5px;color:var(--ink-soft);font-size:12px;font-weight:700}.lesson-videos-toolbar input,.lesson-videos-toolbar select{min-height:36px;border:1px solid var(--line);border-radius:10px;background:#FFF;color:var(--ink);padding:7px 10px;font:inherit;font-size:13px}.lesson-video-list{display:grid;gap:12px}.lesson-video-card{background:#FFF;border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow-soft)}.lesson-video-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.lesson-video-card-head strong{display:block;color:var(--ink);font:700 16px 'IBM Plex Mono',monospace}.lesson-video-card-head span:not(.tag){display:block;color:var(--ink-soft);font-size:13px;margin-top:4px}.lesson-video-students{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0;color:var(--ink-soft);font-size:13px}.lesson-video-student{padding:5px 8px;border-radius:8px;background:#FFF1F0;color:#B34C47;font-weight:700}.lesson-video-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lesson-video-form input{flex:1 1 360px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:13px}.lesson-video-form a{color:var(--blue);font-size:13px;font-weight:700;text-decoration:none}.lesson-videos-message{margin:10px 0}
 @media (max-width:720px){.lesson-video-card{padding:13px}.lesson-video-card-head{flex-direction:column}.lesson-video-form input{flex-basis:100%}.lesson-video-form .btn-primary{width:100%}}
 /* student roster: the three kinds of row (current, new, stopped) share one column grid,
@@ -3615,6 +3570,14 @@ button:active { transform: scale(.98); }
   .roster-row > :first-child { grid-column: 1 / -1; }
   .roster-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
+
+/* home: the date and a one-line summary instead of a banner */
+.today-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 18px; margin: 0 2px 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.today-head h1 { margin: 0; color: var(--ink); font-size: 22px; font-weight: 700; letter-spacing: 0; }
+.today-summary { display: flex; flex-wrap: wrap; gap: 2px 16px; color: var(--ink-soft); font-size: 13px; }
+.today-summary b { margin: 0 3px; color: var(--ink); font: 700 15px 'IBM Plex Mono', monospace; }
+.nav-pills { margin-left: auto; }
+
 ${THEME_COMPONENTS_CSS}
 
 `;

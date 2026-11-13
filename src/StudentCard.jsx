@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { buildStudentCard, orderSubjects, safeVideoUrl } from "./studentRecords.js";
+import { DEFAULT_ATTENDANCE_STATUS, buildStudentCard, filterAttendanceRows, isPlainPresent, orderSubjects, safeVideoUrl } from "./studentRecords.js";
 import { DateField } from "./DateTimeFields.jsx";
 import { fmtDate, fmtStamp, localDateString, twoCalendarMonthsAgo } from "./dateFormat.js";
 import { CHART_THEME, STATUS_STYLE } from "./theme.js";
@@ -78,7 +78,7 @@ const ATTENDANCE_PREVIEW = 20;
 function ScoreTable({ scores, allClasses, showSubject = false, showDate = true }) {
   const rows = [...scores].reverse();
   const hasRank = rows.some((row) => row.rank);
-  if (!rows.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
+  if (!rows.length) return <p className="sc-muted">尚無成績。</p>;
   return <div className="sc-table-wrap"><table className="sc-table"><thead><tr><th>考試</th>{showDate && <th>日期</th>}{allClasses.length > 1 && <th className="sc-col-class">班級</th>}<th className="num">成績</th><th className="num">班平均</th>{hasRank && <th className="num">排名</th>}</tr></thead><tbody>{rows.map((row) => {
     const diff = row.value !== null && row.classAvg !== null ? row.value - row.classAvg : null;
     return <tr key={row.id}><td><div className="sc-cell-main">{row.name}</div><div className="sc-cell-sub">{row.typeLabel}{showSubject && row.subject ? <> · <span className="sc-subject-tag">{row.subject}</span></> : ""}{row.range ? ` · ${row.range}` : ""}</div></td>{showDate && <td className="sc-nowrap">{row.date ? fmtDate(row.date, { weekday: false }) : "—"}</td>}{allClasses.length > 1 && <td className="sc-col-class sc-nowrap">{row.className}</td>}<td className="num sc-score">{row.raw === "" ? "—" : row.raw}{diff !== null && <span className={diff >= 0 ? "sc-up" : "sc-down"}>{diff >= 0 ? "▲" : "▼"}{fmtNum(Math.abs(Math.round(diff * 10) / 10))}</span>}</td><td className="num">{row.classAvg === null ? "—" : fmtNum(row.classAvg)}</td>{hasRank && <td className="num">{row.rank || "—"}</td>}</tr>;
@@ -126,7 +126,7 @@ function ScoreKind({ label, chartTitle, rows, cls, allClasses, showDate = true }
 
 function ScoreSections({ scores, allClasses }) {
   const groups = allClasses.map((cls) => ({ cls, quiz: scores.filter((row) => row.classId === cls.id && row.type === "quiz"), exam: scores.filter((row) => row.classId === cls.id && row.type === "exam") })).filter((group) => group.quiz.length || group.exam.length);
-  if (!groups.length) return <p className="sc-muted">目前沒有成績紀錄。</p>;
+  if (!groups.length) return <p className="sc-muted">尚無成績。</p>;
   return (
     <div className="sc-score-groups">
       {groups.map(({ cls, quiz, exam }) => (
@@ -146,7 +146,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
   const [showAllAttendance, setShowAllAttendance] = useState(false);
   const [attendanceFrom, setAttendanceFrom] = useState(() => parentMode ? twoCalendarMonthsAgo() : "");
   const [attendanceTo, setAttendanceTo] = useState("");
-  const [attendanceStatus, setAttendanceStatus] = useState("all");
+  const [attendanceStatus, setAttendanceStatus] = useState(DEFAULT_ATTENDANCE_STATUS);
   const [attendanceSort, setAttendanceSort] = useState("date");
   const card = useMemo(() => buildStudentCard(snapshot, { classId, type }), [snapshot, classId, type]);
   const allClasses = useMemo(() => buildStudentCard(snapshot)?.classes || [], [snapshot]);
@@ -155,12 +155,15 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
   React.useEffect(() => {
     setAttendanceFrom(parentMode ? twoCalendarMonthsAgo() : "");
     setAttendanceTo("");
+    setAttendanceStatus(DEFAULT_ATTENDANCE_STATUS);
     setShowAllAttendance(false);
   }, [parentMode, snapshot?.student?.id]);
 
   if (!card) return <div className="sc-root"><div className="sc-empty">找不到這位學生的資料。</div><style>{CARD_CSS}</style></div>;
   const { stats } = card;
-  const filteredAttendance = card.attendance.filter((row) => (!attendanceFrom || row.date >= attendanceFrom) && (!attendanceTo || row.date <= attendanceTo) && (!attendanceStatus || attendanceStatus === "all" || row.statuses.includes(attendanceStatus))).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
+  const inRange = filterAttendanceRows(card.attendance, { from: attendanceFrom, to: attendanceTo, status: "all" });
+  const hiddenPresent = attendanceStatus === DEFAULT_ATTENDANCE_STATUS ? inRange.filter(isPlainPresent).length : 0;
+  const filteredAttendance = filterAttendanceRows(card.attendance, { from: attendanceFrom, to: attendanceTo, status: attendanceStatus }).sort((a, b) => attendanceSort === "class" ? a.className.localeCompare(b.className, "zh-Hant") || b.date.localeCompare(a.date) : b.date.localeCompare(a.date) || a.className.localeCompare(b.className, "zh-Hant"));
   const attendanceRows = showAllAttendance ? filteredAttendance : filteredAttendance.slice(0, ATTENDANCE_PREVIEW);
   const makeupRows = parentMode ? card.makeup.filter((row) => inDateRange(row.date, parentCutoff, localDateString())) : card.makeup;
   const school = [...new Set(allClasses.map((cls) => [cls.school, cls.grade].filter(Boolean).join(" · ")).filter(Boolean))][0] || "";
@@ -169,7 +172,6 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
     <div className="sc-root">
       <header className="sc-head">
         <div className="sc-head-main">
-          <div className="sc-kicker">學習紀錄</div>
           <h2 className="sc-name">{card.student.name}</h2>
           {school && <div className="sc-sub">{school}</div>}
         </div>
@@ -185,17 +187,17 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
       {allClasses.length === 1 && <div className="sc-filter sc-filter-static"><span>{allClasses[0].name}{allClasses[0].stopped ? "（已停課）" : ""}</span></div>}
 
       <div className="sc-stats">
-        <Stat label="出席率" value={fmtNum(stats.attendanceRate)} unit="%" detail={stats.counted ? `出席 ${stats.出席} / 應到 ${stats.counted} 堂` : "還沒有出缺勤紀錄"} tone={stats.attendanceRate !== null && stats.attendanceRate < 80 ? "warn" : ""} />
-        <Stat label="請假／曠課" value={`${stats.請假}／${stats.曠課}`} detail={stats.遲到 || stats.早退 ? `遲到 ${stats.遲到} · 早退 ${stats.早退}` : "沒有遲到早退"} tone={stats.曠課 ? "bad" : ""} />
-        <Stat label="平均成績" value={fmtNum(stats.scoreAverage)} unit="分" detail={stats.scoreCount ? (stats.subjectAverages?.length ? stats.subjectAverages.map((item) => `${item.subject || UNTAGGED_LABEL} ${fmtNum(item.average)}（${item.count} 次）`).join(" · ") : `共 ${stats.scoreCount} 次 · 最高 ${fmtNum(stats.scoreBest)}`) : "還沒有成績"} />
-        <Stat label="補課影片" value={String(stats.videoCount)} unit="部" detail={stats.absentCount ? (stats.missingVideoCount ? `缺課 ${stats.absentCount} 次，${stats.missingVideoCount} 次還沒有影片` : `缺課 ${stats.absentCount} 次，都有影片`) : "沒有缺課"} />
+        <Stat label="出席率" value={fmtNum(stats.attendanceRate)} unit="%" detail={stats.counted ? `出席 ${stats.出席} / 應到 ${stats.counted} 堂` : "尚無紀錄"} tone={stats.attendanceRate !== null && stats.attendanceRate < 80 ? "warn" : ""} />
+        <Stat label="請假／曠課" value={`${stats.請假}／${stats.曠課}`} detail={stats.遲到 || stats.早退 ? `遲到 ${stats.遲到} · 早退 ${stats.早退}` : "無遲到早退"} tone={stats.曠課 ? "bad" : ""} />
+        <Stat label="平均成績" value={fmtNum(stats.scoreAverage)} unit="分" detail={stats.scoreCount ? (stats.subjectAverages?.length ? stats.subjectAverages.map((item) => `${item.subject || UNTAGGED_LABEL} ${fmtNum(item.average)}（${item.count} 次）`).join(" · ") : `共 ${stats.scoreCount} 次 · 最高 ${fmtNum(stats.scoreBest)}`) : "尚無成績"} />
+        <Stat label="補課影片" value={String(stats.videoCount)} unit="部" detail={stats.absentCount ? (stats.missingVideoCount ? `缺課 ${stats.absentCount} 次，${stats.missingVideoCount} 次無影片` : `缺課 ${stats.absentCount} 次，都有影片`) : "無缺課"} />
       </div>
 
-      <Section title="考試成績" hint="已依班級分開；每個班級內再分為平時考與段考，有分科的班級會再依科目分開。">
-        {card.scores.length === 0 ? <p className="sc-muted">目前沒有成績紀錄。</p> : <ScoreSections scores={card.scores} allClasses={allClasses} />}
+      <Section title="考試成績">
+        {card.scores.length === 0 ? <p className="sc-muted">尚無成績。</p> : <ScoreSections scores={card.scores} allClasses={allClasses} />}
       </Section>
-      <Section title="補課影片" hint={card.makeup.length ? "請假或曠課那一堂的上課影片，可以點開補看。" : ""}>
-        {makeupRows.length === 0 ? <p className="sc-muted">{parentMode ? "近兩個月沒有缺課紀錄，不需要補課。" : "沒有缺課紀錄，不需要補課。"}</p> : (
+      <Section title="補課影片">
+        {makeupRows.length === 0 ? <p className="sc-muted">{parentMode ? "近兩個月沒有缺課。" : "沒有缺課。"}</p> : (
           <div className="sc-list">
             {makeupRows.map((row) => {
               const url = safeVideoUrl(row.videoUrl);
@@ -203,7 +205,7 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
                 <div className="sc-row" key={row.id}>
                   <div className="sc-row-date"><strong>{fmtDate(row.date)}</strong><span>{row.className}</span></div>
                   <div className="sc-row-body"><StatusChips statuses={row.statuses} />{row.content && <p>{row.content}</p>}</div>
-                  <div className="sc-row-action">{url ? <a className="btn-primary btn-sm" href={url} target="_blank" rel="noreferrer">▶ 觀看影片</a> : <span className="sc-no-video">還沒有影片</span>}</div>
+                  <div className="sc-row-action">{url ? <a className="btn-primary btn-sm" href={url} target="_blank" rel="noreferrer">觀看影片</a> : <span className="sc-no-video">無影片</span>}</div>
                 </div>
               );
             })}
@@ -211,9 +213,9 @@ export default function StudentCard({ snapshot, footer = null, headerActions = n
         )}
       </Section>
 
-      <Section title="出缺勤紀錄" hint={card.attendance.length ? `${parentMode ? "預設顯示近兩個月；" : ""}原始紀錄 ${card.attendance.length} 筆；可依日期、班級與狀態篩選。` : ""}>
-        <div className="sc-attendance-filters"><label>開始日期<DateField value={attendanceFrom} onChange={(value) => { setAttendanceFrom(value); setShowAllAttendance(false); }} aria-label="開始日期" /></label><label>結束日期<DateField value={attendanceTo} onChange={(value) => { setAttendanceTo(value); setShowAllAttendance(false); }} aria-label="結束日期" /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="all">全部狀態</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
-        {filteredAttendance.length === 0 ? <p className="sc-muted">目前篩選條件沒有出缺勤紀錄。</p> : (
+      <Section title="出缺勤紀錄" hint={hiddenPresent ? `出席 ${hiddenPresent} 筆未列出，狀態選「全部」可顯示` : ""}>
+        <div className="sc-attendance-filters"><label>開始日期<DateField value={attendanceFrom} onChange={(value) => { setAttendanceFrom(value); setShowAllAttendance(false); }} aria-label="開始日期" /></label><label>結束日期<DateField value={attendanceTo} onChange={(value) => { setAttendanceTo(value); setShowAllAttendance(false); }} aria-label="結束日期" /></label><label>狀態<select value={attendanceStatus} onChange={(e) => { setAttendanceStatus(e.target.value); setShowAllAttendance(false); }}><option value="exceptions">不含出席</option><option value="all">全部（含出席）</option><option value="出席">出席</option><option value="請假">請假</option><option value="曠課">曠課</option><option value="遲到">遲到</option><option value="早退">早退</option><option value="延課">延課</option><option value="假期">假期</option></select></label><label>排序<select value={attendanceSort} onChange={(e) => setAttendanceSort(e.target.value)}><option value="date">依日期</option><option value="class">依班級</option></select></label></div>
+        {filteredAttendance.length === 0 ? <p className="sc-muted">{attendanceStatus === DEFAULT_ATTENDANCE_STATUS ? "沒有請假、曠課、遲到或早退紀錄。" : "沒有符合條件的紀錄。"}</p> : (
           <>
             <div className="sc-list">
               {attendanceRows.map((row) => (
@@ -241,7 +243,6 @@ export const CARD_CSS = `
 .sc-root{--sc-paper:var(--paper);--sc-ink:var(--ink);--sc-soft:var(--ink-soft);--sc-brass:var(--blue);--sc-brass-soft:var(--blue-soft);--sc-line:var(--line);--sc-card:var(--card);color:var(--sc-ink);font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,sans-serif;display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .sc-root>*{min-width:0}
 .sc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.sc-kicker{color:var(--sc-brass);font-size:12px;font-weight:700;letter-spacing:.08em}
 .sc-name{font-family:'Noto Serif TC',serif;font-size:28px;margin:2px 0 2px;line-height:1.25}
 .sc-sub{color:var(--sc-soft);font-size:13px}
 .sc-filter{display:flex;gap:6px;flex-wrap:wrap}
