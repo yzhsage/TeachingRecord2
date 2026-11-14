@@ -16,8 +16,9 @@
   src/studentRecords.js
   src/students.js
 
-【新增的檔案 12 個】
+【新增的檔案 13 個】
   scripts/assessmentRows.test.mjs
+  scripts/assessmentTabs.test.mjs
   scripts/classSync.test.mjs
   scripts/dateFormat.test.mjs
   scripts/friendlyError.test.mjs
@@ -30,4 +31,4 @@
   src/friendlyError.js
   src/theme.js
 
-覆蓋後請執行：npm test（應為 55 項全過）、npm run build。
+覆蓋後請執行：npm test（應為 60 項全過）、npm run build。

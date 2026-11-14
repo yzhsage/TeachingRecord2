@@ -81,3 +81,26 @@ export function updateAssessmentColumn(column, { name, segment, subject } = {}) 
   }
   return next;
 }
+
+/** Subject tabs of a class's 平時考 / 段考 table: the class's own subjects in the
+    teacher's order, then any other subject name found on an exam, then "" (shown as
+    未分科) when some exam has no subject. Scores of different subjects are never
+    mixed: the table, averages, distribution and trend all belong to ONE tab. */
+export function assessmentSubjectTabs(columns, classSubjects = []) {
+  const own = [...new Set((Array.isArray(classSubjects) ? classSubjects : []).filter(Boolean))];
+  const list = Array.isArray(columns) ? columns : [];
+  const extra = [...new Set(list.map((column) => column?.subject).filter((subject) => subject && !own.includes(subject)))];
+  const hasUntagged = list.some((column) => !column?.subject);
+  return [...own, ...extra, ...(hasUntagged ? [""] : [])];
+}
+
+/** The tab to show: the one asked for if it still exists, otherwise the first tab that has exams. */
+export function activeSubjectTab(tabs, columns, requested) {
+  if (tabs.includes(requested)) return requested;
+  const list = Array.isArray(columns) ? columns : [];
+  const withExams = tabs.find((tab) => list.some((column) => (column?.subject || "") === tab));
+  return withExams ?? tabs[0] ?? "";
+}
+
+/** The exams that belong to one subject tab ("" = no subject). */
+export const columnsOfSubject = (columns, subject) => (Array.isArray(columns) ? columns : []).filter((column) => (column?.subject || "") === subject);

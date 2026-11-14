@@ -14,7 +14,7 @@ import { cleanupOrphanStudentProfiles, loadStudentFirstKey, saveStudentFirstKey 
 import StudentOverview from "./StudentOverview.jsx";
 import { startPortalAutoPublish } from "./portalPublish";
 import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEvent } from "./calendar";
-import { assessmentCapacity, buildScoreDistribution, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
+import { activeSubjectTab, assessmentCapacity, assessmentSubjectTabs, buildScoreDistribution, columnsOfSubject, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
 import { DateField, TimeField } from "./DateTimeFields.jsx";
 import { FONT_IMPORT_CSS, THEME_VARS_CSS, THEME_COMPONENTS_CSS, STATUS_STYLE, CHART_THEME } from "./theme.js";
@@ -2005,12 +2005,12 @@ function ScoreMetric({ label, value, detail, tone }) {
   );
 }
 
-function ScoreOverview({ unitLabel, classAvg, classMedian, classMax, classMin, passRate, completionRate, scoreDistribution }) {
+function ScoreOverview({ unitLabel, subjectLabel = "", classAvg, classMedian, classMax, classMin, passRate, completionRate, scoreDistribution }) {
   const hasScores = scoreDistribution.some((band) => band.count > 0);
   return (
     <div className="score-dashboard">
       <div className="score-dashboard-heading">
-        <div className="score-dashboard-title">{unitLabel}成績</div>
+        <div className="score-dashboard-title">{subjectLabel ? `${subjectLabel} ` : ""}{unitLabel}成績</div>
         <span className="score-dashboard-note">滿分 100 · 人數依各次評量日期計算</span>
       </div>
       <div className="score-metric-grid">
@@ -2072,7 +2072,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
   const [newDate, setNewDate] = useState(todayStr());
   const [newSubject, setNewSubject] = useState("");
   const [newSegment, setNewSegment] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState("all");
+  const [subjectTab, setSubjectTab] = useState(null); // which subject's table is shown
   const [segmentFilter, setSegmentFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [focusStudentId, setFocusStudentId] = useState("");
@@ -2093,6 +2093,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
     const col = { id: genId(), name: newName.trim(), date: withSegment ? newDate : "", subject: newSubject, segment: withSegment ? newSegment.trim() : "" };
     setData((prev) => ({ ...prev, columns: [...prev.columns, col] }));
     setNewName(""); setNewSegment(""); setAdding(false);
+    setSubjectTab(col.subject || ""); setSegmentFilter("all"); // show the exam that was just added
   }
   function removeColumn(colId) {
     setData((prev) => {
@@ -2151,11 +2152,15 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
     return <div className="empty-note" style={{ marginTop: 12 }}>尚無學生，請至「學生與課表」新增。</div>;
   }
 
-  const segments = withSegment ? Array.from(new Set(data.columns.map((c) => c.segment).filter(Boolean))) : [];
-  const subjects = hasSubjects ? cls.subjects : [];
+  // Different subjects are never mixed: with subjects set, one subject's exams are shown at a time,
+  // and every average, distribution and trend below belongs to that subject only.
+  const subjectTabs = assessmentSubjectTabs(data.columns, cls.subjects);
+  const showSubjectTabs = hasSubjects || subjectTabs.some(Boolean);
+  const activeSubject = showSubjectTabs ? activeSubjectTab(subjectTabs, data.columns, subjectTab) : "";
+  const tabColumns = showSubjectTabs ? columnsOfSubject(data.columns, activeSubject) : data.columns;
+  const segments = withSegment ? Array.from(new Set(tabColumns.map((c) => c.segment).filter(Boolean))) : [];
 
-  const filteredColumns = data.columns
-    .filter((c) => subjectFilter === "all" || c.subject === subjectFilter)
+  const filteredColumns = tabColumns
     .filter((c) => !withSegment || segmentFilter === "all" || c.segment === segmentFilter)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
@@ -2239,14 +2244,17 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
 
   return (
     <div>
+      {showSubjectTabs && (
+        <div className="subject-tabs" role="tablist" aria-label="科目">
+          {subjectTabs.map((tab) => (
+            <button key={tab || "none"} type="button" role="tab" aria-selected={tab === activeSubject} className={`pill${tab === activeSubject ? " pill-active" : ""}`} onClick={() => { setSubjectTab(tab); setSegmentFilter("all"); }}>
+              {tab || "未分科"}<span className="subject-tab-count">{columnsOfSubject(data.columns, tab).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="row-between" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
         <div className="row-actions" style={{ flexWrap: "wrap" }}>
-          {hasSubjects && (
-            <select className="filter-select" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
-              <option value="all">全部科目</option>
-              {subjects.map((sub) => <option key={sub} value={sub}>{sub}</option>)}
-            </select>
-          )}
           {withSegment && (
             <select className="filter-select" value={segmentFilter} onChange={(e) => setSegmentFilter(e.target.value)}>
               <option value="all">全部範圍</option>
@@ -2260,7 +2268,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
         </div>
         <div className="row-actions">
           <SaveIndicator status={saveState.status} onRetry={saveState.retry} />
-          <button className="btn-primary btn-sm" onClick={() => setAdding(true)}><Plus size={16} /> 新增{unitLabel}</button>
+          <button className="btn-primary btn-sm" onClick={() => { setNewSubject(hasSubjects && cls.subjects.includes(activeSubject) ? activeSubject : ""); setAdding(true); }}><Plus size={16} /> 新增{unitLabel}</button>
         </div>
       </div>
 
@@ -2294,11 +2302,12 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
       )}
 
       {filteredColumns.length === 0 ? (
-        <div className="empty-note">尚未新增任何{unitLabel}。</div>
+        <div className="empty-note">{showSubjectTabs ? `${activeSubject || "未分科"}尚未新增${unitLabel}。` : `尚未新增任何${unitLabel}。`}</div>
       ) : (
         <>
           <ScoreOverview
             unitLabel={unitLabel}
+            subjectLabel={activeSubject}
             classAvg={classAvg}
             classMedian={classMedian}
             classMax={classMax}
@@ -2319,7 +2328,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                       <div className="assessment-column-name">{col.name}</div>
                       <span className="assessment-column-count">已填 {count} / 當時 {enrolledCount} 人</span>
                     </div>
-                    {(withSegment ? (col.date || col.subject) : col.subject) && <div className="assessment-column-date">{withSegment && col.date && fmtDateShort(col.date, { weekday: false })}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
+                    {withSegment && col.date && <div className="assessment-column-date">{fmtDateShort(col.date, { weekday: false })}</div>}
                     {withSegment && <div className="assessment-column-segment">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     <div className="assessment-column-score-row">
                       <strong>{fmtNum(avg)}</strong>
@@ -2418,7 +2427,7 @@ function AssessmentTab({ cls, storageKeyName, unitLabel, withSegment, withRank }
                           </div>
                         </div>
                       )}
-                      {(withSegment ? (col.date || col.subject) : col.subject) && <div className="matrix-col-date">{withSegment && col.date && fmtDateShort(col.date, { weekday: false })}{withSegment && col.date && col.subject ? " · " : ""}{col.subject}</div>}
+                      {withSegment && col.date && <div className="matrix-col-date">{fmtDateShort(col.date, { weekday: false })}</div>}
                       {withSegment && <div className="matrix-col-range">{col.segment ? `範圍：${col.segment}` : "未填範圍"}</div>}
                     </th>
                   ))}
@@ -3548,6 +3557,9 @@ button:active { transform: scale(.98); }
 .today-summary b { margin: 0 3px; color: var(--ink); font: 700 15px 'IBM Plex Mono', monospace; }
 .nav-pills { margin-left: auto; }
 
+/* subject tabs on the 平時考 / 段考 pages */
+.subject-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.subject-tab-count { margin-left: 6px; font: 700 11px 'IBM Plex Mono', monospace; opacity: .75; }
 ${THEME_COMPONENTS_CSS}
 
 `;
