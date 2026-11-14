@@ -70,3 +70,41 @@ test("applyClassList does not modify its input", () => {
   applyClassList(firebase, [], membershipOf([cls("c1", [roster("s1")])]));
   assert.equal(JSON.stringify(firebase), copy);
 });
+
+import { toClassIndex } from "../src/classSync.js";
+
+// the Firebase round trip: class list -> /students + /classes -> class list again
+const saveAndReload = (classList, before = {}) => {
+  const known = membershipOf(classList);
+  const students = applyClassList(before, classList, { classIds: new Set(), pairs: new Set() });
+  return { students, reloaded: toClassIndex(toClassesRoot(classList), students), known };
+};
+const rosterOf = (reloaded, classId, studentId) => reloaded.find((item) => item.id === classId).students.find((item) => item.id === studentId);
+
+test("a reloaded student is not labelled \"active\": only stopped students carry a membership", () => {
+  const { reloaded } = saveAndReload([cls("c1", [{ id: "s1", name: "甲" }, { id: "s2", name: "乙", membership: "stopped", endDate: "2026-10-01" }])]);
+  assert.equal("membership" in rosterOf(reloaded, "c1", "s1"), false);
+  assert.equal(rosterOf(reloaded, "c1", "s2").membership, "stopped");
+});
+
+test("設為試聽生 / 轉為班內生 survive saving and reloading", () => {
+  const { reloaded } = saveAndReload([cls("c1", [{ id: "s1", name: "甲", forceTrial: true }, { id: "s2", name: "乙", forceActive: true }, { id: "s3", name: "丙" }])]);
+  assert.equal(rosterOf(reloaded, "c1", "s1").forceTrial, true);
+  assert.equal(rosterOf(reloaded, "c1", "s1").forceActive, undefined);
+  assert.equal(rosterOf(reloaded, "c1", "s2").forceActive, true);
+  assert.equal("forceTrial" in rosterOf(reloaded, "c1", "s3") || "forceActive" in rosterOf(reloaded, "c1", "s3"), false);
+});
+
+test("turning a manual flag off removes it from the saved enrollment", () => {
+  const first = saveAndReload([cls("c1", [{ id: "s1", name: "甲", forceTrial: true }])]);
+  const second = applyClassList(first.students, [cls("c1", [{ id: "s1", name: "甲" }])], membershipOf([cls("c1", [{ id: "s1", name: "甲" }])]));
+  const enrollment = Object.values(second.s1.enrollments)[0];
+  assert.equal("forceTrial" in enrollment, false);
+  assert.equal("forceActive" in enrollment, false);
+});
+
+test("saving an unchanged roster writes no 試聽 flags (no churn for existing students)", () => {
+  const { students } = saveAndReload([cls("c1", [{ id: "s1", name: "甲" }])]);
+  const enrollment = Object.values(students.s1.enrollments)[0];
+  assert.equal("forceTrial" in enrollment || "forceActive" in enrollment, false);
+});

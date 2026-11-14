@@ -19,16 +19,13 @@ import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus,
 import { DateField, TimeField } from "./DateTimeFields.jsx";
 import { FONT_IMPORT_CSS, THEME_VARS_CSS, THEME_COMPONENTS_CSS, STATUS_STYLE, CHART_THEME } from "./theme.js";
 import { WEEKDAYS as WEEKDAY_FULL, fmtDate, fmtDateShort, fmtDateRange, fmtTimeRange, ruleWeekLabel, twoCalendarMonthsAgo, weekdayLabel } from "./dateFormat.js";
-import { formatStudentSchoolGroup, isStudentStoppedOnDate, mergeStudentIndex, removeStudentFromRecords, removeStudentFromStudentIndex, studentDisplay, studentStartDate, validateStudentIndex } from "./students";
+import { formatStudentSchoolGroup, isStudentStoppedOnDate, membershipAtDate, mergeStudentIndex, removeStudentFromRecords, removeStudentFromStudentIndex, studentDisplay, toggleTrial, validateStudentIndex } from "./students";
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
 const STATUS_LIST = ATTENDANCE_STATUSES;
-/* Trial students are promoted to regular membership starting with
-   their 3rd recorded session (first 2 are the trial period). */
-const TRIAL_SESSION_COUNT = 2;
 const CLASS_COLORS = ["#B8863B", "#3F7D5C", "#4C6C99", "#7A5EA8", "#B23A34", "#3E8FA8", "#8C6D3F"];
 const STUDENT_GROUPS = ["", "數A", "數B"];
 
@@ -252,35 +249,8 @@ function dedupeById(arr) {
   }
   return out;
 }
-/* Student membership as of a SPECIFIC DATE — not a fixed label. A
-   student can be "not_yet" on a date before they joined, "trial" on
-   their first two recorded sessions, "active" from the third session
-   onward, and "stopped" on any date after their end date. This lets
-   the same student show up correctly no matter which date you're
-   looking at (e.g. viewing last month shouldn't show today's status).
-     - joinDate: first date they can appear at all (unset = no floor,
-       for pre-existing/imported rosters that predate this feature)
-     - endDate: first date the student is no longer expected to attend (set when marked 停班)
-     - resumeDate: first date they return after a previous stop, if any
-     - forceActive / forceTrial: manual overrides, for when the
-       tutor wants to skip or extend the automatic trial period
-   Legacy fields (isTrial, active:false, membership) from earlier
-   versions are still honored for data created before this change. A resumeDate
-   takes precedence from that date onward without erasing the prior endDate. */
 function isStoppedAt(student, dateStr) {
   return isStudentStoppedOnDate(student, dateStr);
-}
-function membershipAtDate(student, dateStr, attendanceData) {
-  const startDate = studentStartDate(student, attendanceData);
-  if (startDate && dateStr < startDate) return "not_yet";
-  if (isStoppedAt(student, dateStr)) return "stopped";
-  if (student.forceActive || student.membership === "active") return "active";
-  if (student.forceTrial) return "trial";
-  const entryDates = Object.keys(attendanceData || {})
-    .filter((d) => (!student.joinDate || d >= student.joinDate) && d <= dateStr && attendanceData[d] && attendanceData[d].records && attendanceData[d].records[student.id] !== undefined)
-    .sort();
-  if (entryDates.length <= TRIAL_SESSION_COUNT) return "trial";
-  return "active";
 }
 /* "Current" (today) membership when no specific date/attendance is in
    scope — used by places (like the fee tab) that just need to know
@@ -2892,7 +2862,7 @@ function StudentEditor({ cls, knownSchools, studentIndex, onUpdateClass }) {
   function toggleForce(id, current) {
     onUpdateClass((c) => ({
       ...c,
-      students: c.students.map((s) => (s.id === id ? { ...s, forceActive: current === "trial", forceTrial: current === "active" } : s)),
+      students: c.students.map((s) => (s.id === id ? toggleTrial(s, current) : s)),
     }));
   }
   function removePermanently(id) {

@@ -1,7 +1,7 @@
 import { ref, set, update } from "firebase/database";
 import { db } from "./firebase";
 import { readPath } from "./firebaseRead";
-import { applyClassList, classesPatch, membershipOf, toClassesRoot } from "./classSync.js";
+import { applyClassList, classesPatch, membershipOf, studentMap, toClassIndex, toClassesRoot } from "./classSync.js";
 import { assessmentForClass, assessmentRowsFor } from "./assessmentRows.js";
 
 const cache = new Map();
@@ -11,57 +11,6 @@ const entries = (value) => Object.entries(isObject(value) ? value : {});
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function classMap(value) {
-  return Object.fromEntries(entries(value).map(([id, item]) => [id, { ...item, id }]));
-}
-
-function studentMap(value) {
-  return Object.fromEntries(entries(value).map(([id, item]) => [id, { ...item, id }]));
-}
-
-function enrollmentToRoster(student, enrollment, cls) {
-  return {
-    id: student.id,
-    name: student.displayName || student.name || "未命名學生",
-    school: enrollment.school || "",
-    group: enrollment.group || "",
-    joinDate: enrollment.joinDate || "",
-    endDate: enrollment.endDate || "",
-    resumeDate: enrollment.resumeDate || "",
-    membership: enrollment.status === "ended" ? "stopped" : "active",
-    isTrial: false,
-    grade: enrollment.grade || cls.grade || "",
-  };
-}
-
-function toClassIndex(classesValue, studentsValue) {
-  const classes = classMap(classesValue);
-  const students = studentMap(studentsValue);
-  return Object.values(classes).map((cls) => {
-    const roster = [];
-    for (const student of Object.values(students)) {
-      for (const enrollment of Object.values(student.enrollments || {})) {
-        if (enrollment.classId === cls.id) {
-          roster.push(enrollmentToRoster(student, enrollment, cls));
-          break;
-        }
-      }
-    }
-    return {
-      ...cls,
-      id: cls.id,
-      name: cls.name || cls.displayName || "未命名班級",
-      subject: cls.subject || "",
-      grade: cls.grade || "",
-      students: roster,
-      scheduleRules: cls.scheduleRules || [],
-      overrides: cls.overrides || [],
-      archived: Boolean(cls.archived),
-      hasFee: Boolean(cls.hasFee),
-    };
-  });
 }
 
 function toStudentIndex(studentsValue) {

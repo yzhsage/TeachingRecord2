@@ -17,6 +17,60 @@ const isObject = (value) => value !== null && typeof value === "object" && !Arra
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const safeId = (text) => String(text).replace(/[^A-Za-z0-9_-]/g, "_");
 
+const entries = (value) => Object.entries(isObject(value) ? value : {});
+export const classMap = (value) => Object.fromEntries(entries(value).map(([id, item]) => [id, { ...item, id }]));
+export const studentMap = (value) => Object.fromEntries(entries(value).map(([id, item]) => [id, { ...item, id }]));
+
+/** One roster line (what the class screen shows) from a student's enrollment.
+    Only "stopped" is written as a membership: calling everyone else "active"
+    switched the automatic 試聽 period off for all students as soon as the data
+    was reloaded. The teacher's manual choice (forceActive / forceTrial) is kept. */
+export function enrollmentToRoster(student, enrollment, cls) {
+  return {
+    id: student.id,
+    name: student.displayName || student.name || "未命名學生",
+    school: enrollment.school || "",
+    group: enrollment.group || "",
+    joinDate: enrollment.joinDate || "",
+    endDate: enrollment.endDate || "",
+    resumeDate: enrollment.resumeDate || "",
+    ...(enrollment.status === "ended" ? { membership: "stopped" } : {}),
+    ...(enrollment.forceActive ? { forceActive: true } : {}),
+    ...(enrollment.forceTrial ? { forceTrial: true } : {}),
+    isTrial: false,
+    grade: enrollment.grade || cls.grade || "",
+  };
+}
+
+/** /classes + /students -> the class list the app works with. */
+export function toClassIndex(classesValue, studentsValue) {
+  const classes = classMap(classesValue);
+  const students = studentMap(studentsValue);
+  return Object.values(classes).map((cls) => {
+    const roster = [];
+    for (const student of Object.values(students)) {
+      for (const enrollment of Object.values(student.enrollments || {})) {
+        if (enrollment.classId === cls.id) {
+          roster.push(enrollmentToRoster(student, enrollment, cls));
+          break;
+        }
+      }
+    }
+    return {
+      ...cls,
+      id: cls.id,
+      name: cls.name || cls.displayName || "未命名班級",
+      subject: cls.subject || "",
+      grade: cls.grade || "",
+      students: roster,
+      scheduleRules: cls.scheduleRules || [],
+      overrides: cls.overrides || [],
+      archived: Boolean(cls.archived),
+      hasFee: Boolean(cls.hasFee),
+    };
+  });
+}
+
 /** Which classes and which (student, class) memberships a class list holds. */
 export function membershipOf(classList) {
   const classIds = new Set();
@@ -83,13 +137,17 @@ export function applyClassList(current, classList, known) {
       const previous = students[roster.id] || { id: roster.id, displayName: roster.name || "", aliases: [], enrollments: {}, sourceRefs: [] };
       const existing = Object.values(previous.enrollments || {}).find((item) => item.classId === cls.id);
       const enrollmentId = existing?.id || safeId(`enr_${roster.id}_${cls.id}`);
+      // the manual 試聽 flags are rewritten from the roster every time, so turning one off really removes it
+      const carried = { ...(existing || {}) };
+      delete carried.forceActive;
+      delete carried.forceTrial;
       students[roster.id] = {
         ...previous,
         displayName: roster.name || previous.displayName || "",
         enrollments: {
           ...(previous.enrollments || {}),
           [enrollmentId]: {
-            ...(existing || {}),
+            ...carried,
             id: enrollmentId,
             studentId: roster.id,
             classId: cls.id,
@@ -102,6 +160,8 @@ export function applyClassList(current, classList, known) {
             endDate: roster.endDate || "",
             resumeDate: roster.resumeDate || "",
             status: roster.membership === "stopped" ? "ended" : "active",
+            ...(roster.forceActive ? { forceActive: true } : {}),
+            ...(roster.forceTrial ? { forceTrial: true } : {}),
           },
         },
       };

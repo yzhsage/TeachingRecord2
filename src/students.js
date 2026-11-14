@@ -141,3 +141,34 @@ export function validateStudentIndex(value) {
   if (!isRecord(value)) return false;
   return Object.entries(value).every(([id, profile]) => typeof id === "string" && isRecord(profile) && (!profile.name || typeof profile.name === "string") && (!profile.school || typeof profile.school === "string") && (!profile.group || typeof profile.group === "string") && (!profile.enrollments || isRecord(profile.enrollments)));
 }
+
+/** Trial students are promoted to regular membership starting with their
+    3rd recorded session (the first 2 are the trial period). */
+export const TRIAL_SESSION_COUNT = 2;
+
+/* Student membership as of a SPECIFIC DATE, not a fixed label. A student can be
+   "not_yet" before they joined, "trial" on their first two recorded sessions,
+   "active" from the third session on, and "stopped" after their end date.
+     - joinDate / endDate / resumeDate: see isStudentStoppedOnDate
+     - forceActive / forceTrial: the teacher's manual choice (skip or extend the
+       trial). A manual choice wins over everything else, including the older
+       `membership: "active"` label, so the 設為試聽生 button always has an effect.
+   Older data with membership "active" / active:false is still honoured. */
+export function membershipAtDate(student, dateStr, attendanceData) {
+  const startDate = studentStartDate(student, attendanceData);
+  if (startDate && dateStr < startDate) return "not_yet";
+  if (isStudentStoppedOnDate(student, dateStr)) return "stopped";
+  if (student.forceActive) return "active";
+  if (student.forceTrial) return "trial";
+  if (student.membership === "active") return "active";
+  const entryDates = Object.keys(attendanceData || {})
+    .filter((d) => (!student.joinDate || d >= student.joinDate) && d <= dateStr && attendanceData[d] && attendanceData[d].records && attendanceData[d].records[student.id] !== undefined)
+    .sort();
+  if (entryDates.length <= TRIAL_SESSION_COUNT) return "trial";
+  return "active";
+}
+
+/** What the 設為試聽生 / 轉為班內生 button does, given the student's current membership. */
+export function toggleTrial(student, current) {
+  return { ...student, forceActive: current === "trial", forceTrial: current === "active" };
+}
