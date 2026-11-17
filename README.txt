@@ -16,7 +16,7 @@
   src/studentRecords.js
   src/students.js
 
-【新增的檔案 13 個】
+【新增的檔案 15 個】
   scripts/assessmentRows.test.mjs
   scripts/assessmentTabs.test.mjs
   scripts/classSync.test.mjs
@@ -24,11 +24,13 @@
   scripts/friendlyError.test.mjs
   scripts/membership.test.mjs
   scripts/theme.test.mjs
+  scripts/videoLink.test.mjs
   src/DateTimeFields.jsx
   src/assessmentRows.js
   src/classSync.js
   src/dateFormat.js
   src/friendlyError.js
   src/theme.js
+  src/videoLink.js
 
-覆蓋後請執行：npm test（應為 60 項全過）、npm run build。
+覆蓋後請執行：npm test（應為 64 項全過）、npm run build。

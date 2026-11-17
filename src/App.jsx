@@ -17,6 +17,7 @@ import { eventTypeMeta, eventDates, eventsOnDate, isContinuousEvent, normalizeEv
 import { activeSubjectTab, assessmentCapacity, assessmentSubjectTabs, buildScoreDistribution, columnsOfSubject, median, numericScore, scoreBand, scoreDelta, scorePercent, studentsEnrolledOnDate, updateAssessmentColumn } from "./assessment";
 import { ATTENDANCE_MODIFIER_STATUSES, ATTENDANCE_STATUSES, attendanceHasStatus, findAttendanceAnomalies, normalizeAttendanceStatus, serializeAttendanceStatus, summarizeAttendanceRecords, toggleAttendanceStatus, wholeDayAttendanceStatus } from "./attendance";
 import { DateField, TimeField } from "./DateTimeFields.jsx";
+import { normalizeVideoLink } from "./videoLink.js";
 import { FONT_IMPORT_CSS, THEME_VARS_CSS, THEME_COMPONENTS_CSS, STATUS_STYLE, CHART_THEME } from "./theme.js";
 import { WEEKDAYS as WEEKDAY_FULL, fmtDate, fmtDateShort, fmtDateRange, fmtTimeRange, ruleWeekLabel, twoCalendarMonthsAgo, weekdayLabel } from "./dateFormat.js";
 import { formatStudentSchoolGroup, isStudentStoppedOnDate, membershipAtDate, mergeStudentIndex, removeStudentFromRecords, removeStudentFromStudentIndex, studentDisplay, toggleTrial, validateStudentIndex } from "./students";
@@ -957,17 +958,34 @@ function LessonVideosView({ classes, studentIndex }) {
   const [selectedClass, setSelectedClass] = useState("all");
   const [datasets, setDatasets] = useState({});
   const [status, setStatus] = useState("loading");
-  const [saving, setSaving] = useState("");
-  const [message, setMessage] = useState("");
+  const [rowStatus, setRowStatus] = useState({}); // row key -> { state: "saving" | "saved" | "error", message }
+  /* Saving one link writes the whole class's attendance, so every save has to start from the
+     newest SAVED copy. Saves of one class therefore run one after another, each building on
+     what the one before it saved. (Starting from the page's state let a second save erase the
+     first one while it was still in flight.) */
+  const savedData = useRef({});
+  const queues = useRef(new Map());
+  const clearTimers = useRef(new Map());
+  const classKey = classes.map((cls) => cls.id).join("|");
+
+  useEffect(() => () => { clearTimers.current.forEach(clearTimeout); }, []);
 
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
     Promise.all(classes.map(async (cls) => [cls.id, await loadKey(`attendance:${cls.id}`, {})]))
-      .then((pairs) => { if (!cancelled) { setDatasets(Object.fromEntries(pairs)); setStatus("ready"); } })
+      .then((pairs) => {
+        if (cancelled) return;
+        const loaded = Object.fromEntries(pairs);
+        savedData.current = loaded;
+        setDatasets(loaded);
+        setStatus("ready");
+      })
       .catch(() => { if (!cancelled) setStatus("error"); });
     return () => { cancelled = true; };
-  }, [classes]);
+    // reload only when the list of classes really changes, not on every re-render of the parent
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classKey]);
 
   const rows = useMemo(() => classes.flatMap((cls) => {
     if (selectedClass !== "all" && cls.id !== selectedClass) return [];
@@ -978,35 +996,60 @@ function LessonVideosView({ classes, studentIndex }) {
     });
   }).sort((a, b) => b.date.localeCompare(a.date) || a.cls.name.localeCompare(b.cls.name, "zh-Hant")), [classes, datasets, selectedClass, from, to]);
 
-  async function saveVideo(row, value) {
-    const next = { ...(datasets[row.cls.id] || {}) };
-    const day = { note: "", content: "", records: {}, ...(next[row.date] || {}) };
-    next[row.date] = { ...day, videoUrl: value.trim() };
-    setSaving(row.key); setMessage("");
+  function showRowStatus(key, next) {
+    clearTimeout(clearTimers.current.get(key));
+    setRowStatus((current) => {
+      if (next) return { ...current, [key]: next };
+      const { [key]: removed, ...rest } = current;
+      return rest;
+    });
+    if (next?.state === "saved") clearTimers.current.set(key, setTimeout(() => showRowStatus(key, null), 4000));
+  }
+
+  async function saveVideo(row, rawValue) {
+    const check = normalizeVideoLink(rawValue);
+    if (!check.ok) { showRowStatus(row.key, { state: "error", message: `${check.message}（尚未儲存）` }); return; }
+    const classId = row.cls.id;
+    const key = `attendance:${classId}`;
+    showRowStatus(row.key, { state: "saving" });
+    const task = async () => {
+      const base = savedData.current[classId] || {};
+      const day = { note: "", content: "", records: {}, ...(base[row.date] || {}) };
+      const next = { ...base, [row.date]: { ...day, videoUrl: check.url } };
+      const ok = await saveKey(key, next);
+      if (!ok) { memoryCache.set(key, base); throw new Error("save failed"); }
+      savedData.current = { ...savedData.current, [classId]: next };
+      setDatasets((current) => ({ ...current, [classId]: next }));
+    };
+    const run = (queues.current.get(classId) || Promise.resolve()).catch(() => {}).then(task);
+    queues.current.set(classId, run);
     try {
-      const ok = await saveKey(`attendance:${row.cls.id}`, next);
-      if (!ok) throw new Error("save failed");
-      setDatasets((current) => ({ ...current, [row.cls.id]: next }));
-      setMessage("已儲存影片連結。");
-    } catch { setMessage("儲存失敗，請確認網路後再試。"); }
-    finally { setSaving(""); }
+      await run;
+      showRowStatus(row.key, { state: "saved" });
+    } catch {
+      showRowStatus(row.key, { state: "error", message: "儲存失敗，請確認網路後再試。" });
+    }
   }
 
   return <div className="view-pad lesson-videos-view">
     <div className="section-head"><div><h2 className="page-title">上課影片</h2><div className="section-hint">請假、曠課紀錄；影片連結即該日的錄影連結。</div></div><span className="tag tag-muted">{rows.length} 筆</span></div>
     <div className="lesson-videos-toolbar"><label>開始日期<DateField value={from} onChange={setFrom} clearable placeholder="不限開始日" aria-label="開始日期" /></label><label>結束日期<DateField value={to} onChange={setTo} clearable placeholder="不限結束日" aria-label="結束日期" /></label><label>班級<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="all">全部班級</option>{classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label></div>
-    {message && <div className="backup-warning lesson-videos-message">{message}</div>}
     {status === "loading" && <div className="empty-note">讀取中…</div>}
     {status === "error" && <div className="load-error-banner">讀取失敗，請重新整理。</div>}
     {status === "ready" && !rows.length && <div className="empty-note">此期間沒有缺課紀錄。</div>}
-    {status === "ready" && rows.length > 0 && <div className="lesson-video-list">{rows.map((row) => <LessonVideoRow key={row.key} row={row} studentIndex={studentIndex} saving={saving === row.key} onSave={saveVideo} />)}</div>}
+    {status === "ready" && rows.length > 0 && <div className="lesson-video-list">{rows.map((row) => <LessonVideoRow key={row.key} row={row} studentIndex={studentIndex} status={rowStatus[row.key]} onSave={saveVideo} />)}</div>}
   </div>;
 }
 
-function LessonVideoRow({ row, studentIndex, saving, onSave }) {
-  const [value, setValue] = useState(row.day.videoUrl || "");
-  useEffect(() => setValue(row.day.videoUrl || ""), [row.day.videoUrl]);
-  return <article className="lesson-video-card"><div className="lesson-video-card-head"><div><strong>{formatDisplay(row.date)}</strong><span>{row.cls.name}</span></div><span className={value ? "tag tag-good" : "tag tag-warn"}>{value ? "已填影片" : "尚未填寫"}</span></div><div className="lesson-video-students"><span>缺課學生：</span>{row.absent.map(([studentId, raw]) => { const student = row.cls.students.find((item) => item.id === studentId); const display = student ? studentDisplay(student, studentIndex, row.cls) : { name: studentId }; return <span className="lesson-video-student" key={studentId}>{display.name}（{normalizeAttendanceStatus(raw).filter((item) => item === "請假" || item === "曠課").join("、")}）</span>; })}</div><div className="lesson-video-form"><input type="url" value={value} onChange={(e) => setValue(e.target.value)} placeholder="貼上影片連結" /><button className="btn-primary btn-sm" disabled={saving} onClick={() => onSave(row, value)}>{saving ? "儲存中…" : "儲存連結"}</button>{value && /^https?:\/\//i.test(value) && <a href={value} target="_blank" rel="noreferrer">開啟影片</a>}</div></article>;
+function LessonVideoRow({ row, studentIndex, status, onSave }) {
+  const savedUrl = row.day.videoUrl || "";
+  const [value, setValue] = useState(savedUrl);
+  useEffect(() => { setValue(savedUrl); }, [savedUrl]);
+  const state = status?.state;
+  const dirty = value.trim() !== savedUrl;
+  const note = state === "saving" ? "儲存中…" : state === "saved" ? "✓ 已儲存" : state === "error" ? status.message : dirty ? "尚未儲存" : "";
+  const safeSaved = /^https?:\/\//i.test(savedUrl) ? savedUrl : "";
+  return <article className="lesson-video-card"><div className="lesson-video-card-head"><div><strong>{formatDisplay(row.date)}</strong><span>{row.cls.name}</span></div><span className={savedUrl ? "tag tag-good" : "tag tag-warn"}>{savedUrl ? "已填影片" : "尚未填寫"}</span></div><div className="lesson-video-students"><span>缺課學生：</span>{row.absent.map(([studentId, raw]) => { const student = row.cls.students.find((item) => item.id === studentId); const display = student ? studentDisplay(student, studentIndex, row.cls) : { name: studentId }; return <span className="lesson-video-student" key={studentId}>{display.name}（{normalizeAttendanceStatus(raw).filter((item) => item === "請假" || item === "曠課").join("、")}）</span>; })}</div><div className="lesson-video-form"><input type="url" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSave(row, value); } }} placeholder="貼上影片連結" /><button className="btn-primary btn-sm" disabled={state === "saving"} onClick={() => onSave(row, value)}>{state === "saving" ? "儲存中…" : state === "error" ? "重試" : "儲存連結"}</button>{safeSaved && <a href={safeSaved} target="_blank" rel="noreferrer">開啟影片</a>}<span className={`video-save-note${state ? ` video-save-${state}` : ""}`} role="status" aria-live="polite">{note}</span></div></article>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1578,6 +1621,8 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   const [viewMode, setViewMode] = useState("single");
   const [editingCell, setEditingCell] = useState(null);
   const [journalDraft, setJournalDraft] = useState({ content: "", note: "", videoUrl: "" });
+  const [videoLinkError, setVideoLinkError] = useState("");
+  const [videoSaveWatch, setVideoSaveWatch] = useState(false); // show the save result next to the link box after it was changed
   const storageKeyName = `attendance:${cls.id}`;
   const [data, setData, ready] = useCachedStore(storageKeyName, {});
 
@@ -1586,6 +1631,8 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   const dayData = { note: "", content: "", records: {}, ...(data[date] || {}) };
   useEffect(() => {
     setJournalDraft({ content: dayData.content || "", note: dayData.note || "", videoUrl: dayData.videoUrl || "" });
+    setVideoLinkError("");
+    setVideoSaveWatch(false);
     // 只在切換日期或初次載入時同步，避免每次輸入都被資料狀態覆蓋。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, ready]);
@@ -1645,8 +1692,21 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
   function markStopped(studentId) {
     onUpdateClass((c) => ({ ...c, students: c.students.map((s) => (s.id === studentId ? { ...s, endDate: date, resumeDate: "" } : s)) }));
   }
+  useEffect(() => {
+    if (!videoSaveWatch || saveState.status !== "saved") return undefined;
+    const timer = setTimeout(() => setVideoSaveWatch(false), 4000);
+    return () => clearTimeout(timer);
+  }, [videoSaveWatch, saveState.status]);
   function saveJournalField(field) {
-    const value = journalDraft[field] || "";
+    let value = journalDraft[field] || "";
+    if (field === "videoUrl") {
+      const check = normalizeVideoLink(value);
+      if (!check.ok) { setVideoLinkError(check.message); return; } // keep the last saved link, say why
+      setVideoLinkError("");
+      value = check.url;
+      if (value !== journalDraft.videoUrl) setJournalDraft((draft) => ({ ...draft, videoUrl: value }));
+      if (value !== (dayData.videoUrl || "")) setVideoSaveWatch(true);
+    }
     setDay((d) => ({ ...d, [field]: value }));
   }
   function confirmCancel() {
@@ -1765,9 +1825,10 @@ function AttendanceTab({ cls, date, setDate, onUpdateClass, studentIndex }) {
             <input value={journalDraft.note} onChange={(e) => setJournalDraft((draft) => ({ ...draft, note: e.target.value }))} onBlur={() => saveJournalField("note")} placeholder="例：颱風停課、教室異動…" />
           </label>
           <label className="field" style={{ marginTop: 8 }}>
-            <span>當日錄影連結（選填）</span>
+            <span>當日錄影連結（選填）{videoSaveWatch && <> <SaveIndicator status={saveState.status} onRetry={saveState.retry} /></>}</span>
             <input type="url" value={journalDraft.videoUrl} onChange={(e) => setJournalDraft((draft) => ({ ...draft, videoUrl: e.target.value }))} onBlur={() => saveJournalField("videoUrl")} placeholder="貼上錄影連結" />
           </label>
+          {videoLinkError && <div className="field-error" role="alert">{videoLinkError}（尚未儲存）</div>}
           {dayData.videoUrl && /^https?:\/\//i.test(dayData.videoUrl) && <div className="journal-video-link"><a href={dayData.videoUrl} target="_blank" rel="noreferrer">開啟當日錄影</a></div>}
 
           {cls.students.length === 0 ? (
@@ -3560,6 +3621,12 @@ button:active { transform: scale(.98); }
 /* subject tabs on the 平時考 / 段考 pages */
 .subject-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .subject-tab-count { margin-left: 6px; font: 700 11px 'IBM Plex Mono', monospace; opacity: .75; }
+/* video link saving feedback */
+.video-save-note { min-width: 0; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.video-save-note:empty { display: none; }
+.video-save-saved { color: #3F7D5C; }
+.video-save-error { color: var(--danger); }
+.field-error { margin-top: 4px; color: var(--danger); font-size: 12px; font-weight: 700; }
 ${THEME_COMPONENTS_CSS}
 
 `;
